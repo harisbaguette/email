@@ -1,0 +1,51 @@
+{
+  "name": "bluekite-mail",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run build && wrangler dev --port 8787",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "npm run db:local && npm run password:local && playwright test",
+    "db:local": "wrangler d1 migrations apply bluekite-mail --local",
+    "db:remote": "wrangler d1 migrations apply bluekite-mail --remote",
+    "password:local": "node scripts/reset-password.mjs --local",
+    "password:reset": "node scripts/reset-password.mjs --remote",
+    "deploy": "npm run build && npm run db:remote && wrangler deploy"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "html-to-text": "^10.0.1",
+    "lucide-react": "^1.52.0",
+    "postal-mime": "^4.0.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sanitize-html": "^2.18.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.5",
+    "undici": "^7.29.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20261007.1",
+    "@playwright/test": "^1.63.0",
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/sanitize-html": "^2.16.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.148.0"
+  }
+}

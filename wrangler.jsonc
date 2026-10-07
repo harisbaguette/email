@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bluekite-mail",
+  "account_id": "5871253814d74116cd773041aa530e40",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "dev": { "host": "127.0.0.1", "ip": "127.0.0.1", "port": 8787, "local_protocol": "http" },
+  "routes": [{ "pattern": "email.bluekite.co.kr", "custom_domain": true }],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "MAIL_DOMAIN": "bluekite.co.kr",
+    "PUBLIC_ORIGIN": "https://email.bluekite.co.kr"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "bluekite-mail",
+    "database_id": "ed59da89-611d-4e3e-a085-3dae322664cb",
+    "migrations_dir": "migrations"
+  }],
+  "ratelimits": [{
+    "name": "LOGIN_LIMITER",
+    "namespace_id": "2001",
+    "simple": { "limit": 5, "period": 60 }
+  }],
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
+}
