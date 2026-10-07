@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronRight, Copy, Download, Inbox, LogOut, Mail, MailOpen, Menu, Plus, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Copy, Download, Inbox, LogOut, Mail, MailOpen, Menu, Plus, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip, Megaphone, Mails } from 'lucide-react';
 import type { Folder, InboxResult, MailMessage, MessageSummary } from '../shared/types';
 import { api, copyText, errorMessage } from './api';
 import { AddressDialog, Brand, EmptyState, formatBytes, Login, Modal, SettingsDialog, Toast } from './components';
 import { EmailBody } from './EmailBody';
 import { verificationCode } from '../shared/verification';
 
-const emptyInbox: InboxResult = { messages: [], addresses: [], counts: { inbox: 0, unread: 0, trash: 0 }, nextCursor: null };
-const folderLabels: Record<Folder, string> = { inbox: '전체 메일', unread: '안 읽은 메일', trash: '휴지통' };
+const emptyInbox: InboxResult = { messages: [], addresses: [], counts: { inbox: 0, unread: 0, promotions: 0, all: 0, trash: 0 }, sorting: { enabled: false, pending: 0, delayed: 0 }, nextCursor: null };
+const folderLabels: Record<Folder, string> = { inbox: '받은 메일', unread: '안 읽은 메일', promotions: '광고·소식', all: '전체 메일', trash: '휴지통' };
 const timeFormat = new Intl.DateTimeFormat('ko-KR', { hour: 'numeric', minute: '2-digit' });
 const dateFormat = new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' });
 const fullDateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'short' });
@@ -15,7 +15,7 @@ const fullDateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', tim
 function initialLocation() {
   const params = new URLSearchParams(location.search);
   const folder = params.get('folder');
-  return { folder: (folder === 'unread' || folder === 'trash' ? folder : 'inbox') as Folder,
+  return { folder: (folder && ['unread', 'promotions', 'all', 'trash'].includes(folder) ? folder : 'inbox') as Folder,
     address: params.get('address') || '', query: params.get('q') || '', selected: params.get('message') || null };
 }
 
@@ -133,7 +133,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   useEffect(() => { setLoading(true); void refresh(); }, [refresh]);
   useEffect(() => {
     const poll = () => { if (!document.hidden && navigator.onLine && !loadedMore) void refresh(true); };
-    const timer = setInterval(poll, address && folder === 'inbox' ? 10000 : 20000);
+    const timer = setInterval(poll, 10000);
     document.addEventListener('visibilitychange', poll); window.addEventListener('online', poll);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); window.removeEventListener('online', poll); };
   }, [refresh, loadedMore, address, folder]);
@@ -183,14 +183,17 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     else navigate({ selected: null });
   }
 
-  async function mutate(action: 'read' | 'unread' | 'trash' | 'restore' | 'delete') {
+  async function mutate(action: 'read' | 'unread' | 'trash' | 'restore' | 'delete' | 'inbox' | 'promotions') {
     if (!message || messageBusy) return;
     const id = message.id; setMessageBusy(true);
     try {
       await api(`/api/messages/${id}`, { method: action === 'delete' ? 'DELETE' : 'PATCH', body: action === 'delete' ? undefined : JSON.stringify({ action }) });
-      if (action === 'trash' || action === 'restore' || action === 'delete') {
+      if (action === 'inbox' || action === 'promotions') {
+        navigate({ selected: null });
+        notify(action === 'inbox' ? '받은 메일로 옮겼어요.' : '광고·소식으로 옮겼어요.');
+      } else if (action === 'trash' || action === 'restore' || action === 'delete') {
         navigate({ selected: null }); setDialog(null);
-        notify(action === 'trash' ? '휴지통으로 이동했어요.' : action === 'restore' ? '수신함으로 복원했어요.' : '메일을 영구 삭제했어요.',
+        notify(action === 'trash' ? '휴지통으로 이동했어요.' : action === 'restore' ? `${message.category === 'promotions' ? '광고·소식' : '받은 메일'}으로 복원했어요.` : '메일을 영구 삭제했어요.',
           action === 'trash' ? () => { void api(`/api/messages/${id}`, { method: 'PATCH', body: JSON.stringify({ action: 'restore' }) })
             .then(() => { notify('메일을 복원했어요.'); void refresh(true); }).catch(e => notify(errorMessage(e))); } : undefined);
       } else setMessage({ ...message, is_read: Number(action === 'read') });
@@ -207,7 +210,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
       <div className="sidebar-brand"><Brand /><button className="icon-button mobile-only" onClick={() => setSidebarOpen(false)} aria-label="메뉴 닫기"><X size={20} /></button></div>
       <button className="primary-button new-address" onClick={() => { setSidebarOpen(false); setDialog('address'); }}><Plus size={19} />주소 만들기</button>
       <nav aria-label="메일함" className="folder-nav">
-        {([['inbox', Inbox], ['unread', Mail], ['trash', Trash2]] as const).map(([key, Icon]) =>
+        {([['inbox', Inbox], ['unread', Mail], ['promotions', Megaphone], ['all', Mails], ['trash', Trash2]] as const).map(([key, Icon]) =>
           <button key={key} className={`nav-item ${folder === key && !address ? 'active' : ''}`} onClick={() => chooseFolder(key)} aria-current={folder === key && !address ? 'page' : undefined}>
             <Icon size={19} /><span>{folderLabels[key]}</span><span className="nav-count">{data.counts[key]}</span>
           </button>)}
@@ -216,7 +219,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
         {data.addresses.length > 8 && <input className="address-search" placeholder="주소 찾기" aria-label="주소 찾기" value={addressSearch} onChange={e => setAddressSearch(e.target.value)} />}
         <div className="address-nav">
           {visibleAddresses.map(item => <button className={`address-item ${address === item.address ? 'active' : ''}`} key={item.address}
-            onClick={() => chooseFolder('inbox', item.address)} title={item.address} aria-current={address === item.address ? 'page' : undefined}>
+            onClick={() => chooseFolder('all', item.address)} title={item.address} aria-current={address === item.address ? 'page' : undefined}>
             <span className="at-symbol">@</span><span className="address-name">{item.address.split('@')[0]}</span>{item.unread > 0 && <span className="address-unread">{item.unread}</span>}
           </button>)}
           {!loading && !data.addresses.length && <p className="no-addresses">만들거나 메일을 받은 주소가<br />여기에 표시됩니다.</p>}
@@ -235,13 +238,14 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
         <button className={`icon-button refresh-button ${refreshing ? 'spinning' : ''}`} onClick={() => void refresh()} aria-label="새로고침" title="새로고침" disabled={refreshing}><RefreshCw size={19} /></button>
       </header>
       {listError && <div className="connection-error" role="alert"><span>{listError}</span><button onClick={() => void refresh()}>다시 시도</button></div>}
+      {data.sorting.enabled && data.sorting.delayed > 0 && <div className="sorting-notice" role="status">자동 정리가 지연되고 있어요. 메일은 받은 메일에 보관했고, 잠시 후 다시 정리합니다.</div>}
       <div className="mail-columns">
         <section className="mail-list" aria-label="메일 목록">
-          <div className="list-toolbar"><span>{query ? `“${query}” 검색` : address || '최근 받은 메일'}</span><span>{loading ? '' : `${data.messages.length}${data.nextCursor ? '+' : ''}개`}</span></div>
+          <div className="list-toolbar"><span>{query ? `“${query}” 검색` : address || (folder === 'promotions' ? '광고와 뉴스레터 · 자동 삭제 없음' : folder === 'inbox' ? '모든 주소 · 광고는 자동으로 따로' : folder === 'all' ? '광고를 포함한 모든 주소' : folderLabels[folder])}</span><span>{loading ? '' : `${data.messages.length}${data.nextCursor ? '+' : ''}개`}</span></div>
           <div className="list-scroll" aria-busy={loading}>
             {loading ? <div className="list-loading" role="status">메일을 불러오는 중…</div>
               : data.messages.length ? data.messages.map(item => <MailRow key={item.id} item={item} selected={item.id === selected} onClick={() => navigate({ selected: item.id }, true)} />)
-                : !listError && <EmptyState filtered={folder !== 'inbox' || Boolean(address)} waiting={folder === 'inbox' && Boolean(address)} query={query} onAdd={() => setDialog('address')} />}
+                : !listError && <EmptyState filtered={folder !== 'inbox' || Boolean(address)} waiting={Boolean(address)} query={query} onAdd={() => setDialog('address')} />}
             {!loading && data.nextCursor && <button className="load-more" onClick={() => void more()} disabled={refreshing}>{refreshing ? '불러오는 중…' : '이전 메일 더 보기'}</button>}
           </div>
         </section>
@@ -261,6 +265,9 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
                 : <><div className="message-header"><h2>{message.subject}</h2><div className="sender-line"><span className="sender-avatar">{(message.sender_name || message.sender_address || '?')[0].toUpperCase()}</span><div className="sender-meta"><strong>{message.sender_name || message.sender_address}</strong>{message.sender_name && <span>{message.sender_address}</span>}</div></div>
                   <div className="recipient-line"><span>받는 사람</span><button onClick={() => void copy(message.recipient)} title="주소 복사">{message.recipient}<Copy size={13} /></button></div>
                   <div className="message-date">{fullDateFormat.format(message.received_at)}</div>
+                  {message.deleted_at === null && <div className="category-control"><span>{message.category === 'promotions' ? '광고·소식' : '받은 메일'}{message.category_source === 'manual' ? ' · 직접 분류' : message.category === 'promotions' ? ' · 자동 정리됨' : ''}</span>
+                    <button className="text-button" disabled={messageBusy} onClick={() => void mutate(message.category === 'promotions' ? 'inbox' : 'promotions')}>
+                      {message.category === 'promotions' ? <Inbox size={15} /> : <Megaphone size={15} />}{message.category === 'promotions' ? '광고 아님' : '광고·소식으로 이동'}</button></div>}
                   {message.attachments.length > 0 && <div className="attachments">{message.attachments.map(file => <a key={file.index} href={`/api/messages/${message.id}/attachments/${file.index}`} download className="attachment"><Paperclip size={16} /><span>{file.filename}<small>{formatBytes(file.size)}</small></span><Download size={15} /></a>)}</div>}
                 </div>{code && <div className="verification-code"><div><span>인증번호</span><strong>{code}</strong></div><button className="secondary-button" aria-label="인증번호 복사"
                   onClick={() => { void copyText(code).then(() => notify('인증번호를 복사했어요.')).catch(() => notify('복사하지 못했어요. 번호를 직접 선택해 주세요.')); }}><Copy size={16} />복사</button></div>}
@@ -269,7 +276,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
         </section>
       </div>
     </main>
-    {dialog === 'address' && <AddressDialog domain={domain} onClose={() => { setDialog(null); void refresh(true); }} onCreated={newAddress => { setDialog(null); chooseFolder('inbox', newAddress); notify(`${newAddress} 복사됨`); }} />}
+    {dialog === 'address' && <AddressDialog domain={domain} onClose={() => { setDialog(null); void refresh(true); }} onCreated={newAddress => { setDialog(null); chooseFolder('inbox'); void refresh(true); notify(`${newAddress} 복사됨 · 메일은 여기로 도착해요`); }} />}
     {dialog === 'settings' && <SettingsDialog domain={domain} onClose={() => setDialog(null)} notify={notify} />}
     {dialog === 'delete' && <Modal title="메일을 영구 삭제할까요?" onClose={() => setDialog(null)}><p className="delete-description">메일과 첨부 파일이 삭제되며 복원할 수 없습니다.</p><div className="modal-actions"><button className="secondary-button" autoFocus onClick={() => setDialog(null)}>취소</button><button className="danger-button" disabled={messageBusy} onClick={() => void mutate('delete')}>{messageBusy ? '삭제 중…' : '영구 삭제'}</button></div></Modal>}
     {toast && <Toast text={toast.text} undo={toast.undo} />}
@@ -280,6 +287,6 @@ function MailRow({ item, selected, onClick }: { item: MessageSummary; selected: 
   return <button className={`mail-row ${selected ? 'selected' : ''} ${item.is_read ? '' : 'unread'}`} onClick={onClick} aria-pressed={selected}>
     <div className="row-top"><span className="row-sender">{!item.is_read && <span className="unread-dot" />}{item.sender_name || item.sender_address}</span><time dateTime={new Date(item.received_at).toISOString()}>{shortTime(item.received_at)}</time></div>
     <div className="row-subject">{item.subject}</div><p className="row-preview">{item.preview}</p>
-    <div className="row-bottom"><span className="recipient-tag">{item.recipient.split('@')[0]}<span>@{item.recipient.split('@')[1]}</span></span>{item.attachments.length > 0 && <Paperclip size={14} aria-label="첨부 파일 있음" />}<ChevronRight size={14} className="row-arrow" /></div>
+    <div className="row-bottom"><span className="recipient-tag">{item.recipient.split('@')[0]}<span>@{item.recipient.split('@')[1]}</span></span>{item.category === 'promotions' && <span className="promotion-tag">광고·소식</span>}{item.attachments.length > 0 && <Paperclip size={14} aria-label="첨부 파일 있음" />}<ChevronRight size={14} className="row-arrow" /></div>
   </button>;
 }

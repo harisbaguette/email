@@ -1,12 +1,14 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env, applyD1Migrations } from 'cloudflare:test';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 import worker from '../worker/index';
 import { receiveMail, getRaw, MAX_EMAIL_BYTES } from '../worker/mail';
 import { sha256 } from '../worker/auth';
 import type { Env } from '../worker/types';
 import { verificationCode } from '../shared/verification';
+import { sortMessage, sortPending } from '../worker/sorting';
+import { sortingDecision, sortingRequest } from '../worker/sorting-policy';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 const testEnv = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) } } as Env;
@@ -38,11 +40,141 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await bindings.DB.batch(['DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts'].map(sql => bindings.DB.prepare(sql)));
+  await bindings.DB.batch(['DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts', 'DELETE FROM sorting_usage'].map(sql => bindings.DB.prepare(sql)));
   await bindings.DB.prepare("INSERT INTO settings (key, value) VALUES ('password_hash', ?)").bind(await bcrypt.hash(password, 4)).run();
   const response = await request('/api/login', 'POST', { password }, false);
   expect(response.status).toBe(200);
   cookie = response.headers.get('Set-Cookie')!.split(';')[0];
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('automatic sorting without mail loss', () => {
+  const sortingEnv = { ...testEnv, TYPESAFE_API_KEY: 'test-only-not-a-real-key' };
+  const answer = (promotional = 0.97, important = 0.02) => ({ model: 'jev-1.13.0', answers: {
+    promotional: { type: 'noul', noul: promotional }, important: { type: 'noul', noul: important },
+  } });
+  const advert = 'From: Shop <shop@example.net>\r\nSubject: Special sale\r\nContent-Type: text/plain\r\n\r\nGet 50% off everything today. Shop now!';
+  const list = async (folder = 'inbox') => await (await request(`/api/inbox?folder=${folder}`)).json() as any;
+
+  it('separates advertising across addresses while retaining the original and all-mail view', async () => {
+    const fetcher = vi.fn(async () => Response.json(answer())); vi.stubGlobal('fetch', fetcher);
+    const id = (await receiveMail(incoming(advert, 'shop@bluekite.co.kr'), testEnv))!;
+    await receiveMail(incoming(simpleRaw), testEnv);
+    await sortPending(sortingEnv);
+    expect(fetcher).toHaveBeenCalledTimes(1); // numeric auth code never leaves Cloudflare
+    expect((await list()).messages.map((m: any) => m.recipient)).toEqual(['pixiv@bluekite.co.kr']);
+    expect((await list('promotions')).messages.map((m: any) => m.id)).toEqual([id]);
+    expect((await list('all')).messages).toHaveLength(2);
+    expect((await list()).counts).toMatchObject({ inbox: 1, promotions: 1, all: 2, unread: 1 });
+    expect(new TextDecoder().decode((await getRaw(testEnv, id))!)).toBe(advert);
+    expect((await list()).sorting.pending).toBe(0);
+    await request(`/api/messages/${id}`, 'PATCH', { action: 'inbox' });
+    await sortPending(sortingEnv);
+    expect((await list('promotions')).messages).toHaveLength(0);
+    expect((await list()).messages).toHaveLength(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps ambiguous and transactional emails even when promotional probability is high', () => {
+    expect(sortingDecision(answer(0.84, 0.01)).category).toBe('inbox');
+    expect(sortingDecision(answer(0.99, 0.2)).category).toBe('inbox');
+    expect(sortingDecision(answer(0.91, 0.04)).category).toBe('promotions');
+    for (const bad of [null, {}, answer(NaN), answer(1.1), { answers: { promotional: { type: 'noul', noul: 1 } } }]) {
+      expect(() => sortingDecision(bad)).toThrow('invalid_sorting_response');
+    }
+  });
+
+  it('sends only a bounded redacted excerpt, without credentials, recipients, HTML or attachments', () => {
+    const payload = sortingRequest('Hello user@example.com 482913', 'https://example.com/reset?token=SECRET-token-12345 ' + 'x'.repeat(9000) + ' end');
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toMatch(/user@example|482913|SECRET-token|example.com\/reset/);
+    const long = sortingRequest('긴 메일', '긴 본문을 보냅니다. '.repeat(1000));
+    expect(long.state.body.length).toBeLessThanOrEqual(6100);
+    expect(long.state.body).toContain('[excerpt omitted]');
+    expect(Object.keys(payload.state)).toEqual(['subject', 'body']);
+  });
+
+  it('stores mail before classification, then retries an outage with a shared backoff', async () => {
+    const fetcher = vi.fn(async () => new Response('', { status: 429 })); vi.stubGlobal('fetch', fetcher);
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await sortMessage(sortingEnv, id);
+    expect((await list()).messages).toHaveLength(1);
+    expect((await list()).sorting).toMatchObject({ pending: 1, delayed: 1 });
+    expect(await getRaw(testEnv, id)).not.toBeNull();
+    await sortMessage(sortingEnv, id);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await bindings.DB.prepare("DELETE FROM settings WHERE key = 'sort_pause_until'").run();
+    await bindings.DB.prepare('UPDATE messages SET sort_due_at = 0 WHERE id = ?').bind(id).run();
+    fetcher.mockImplementation(async () => Response.json(answer()));
+    await sortPending(sortingEnv);
+    expect((await list('promotions')).messages).toHaveLength(1);
+    expect((await list()).sorting.pending).toBe(0);
+  });
+
+  it('rejects malformed model output and leaves the message in the inbox for retry', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ answers: { promotional: 'delete everything' } })));
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await sortMessage(sortingEnv, id);
+    expect((await list()).messages[0]).toMatchObject({ category: 'inbox', category_source: 'pending' });
+    expect((await list()).sorting.delayed).toBe(1);
+  });
+
+  it('uses the Workers-supported manual redirect mode and never forwards API credentials', async () => {
+    const fetcher = vi.fn(async (_url: string, options: RequestInit) => {
+      expect(options.redirect).toBe('manual');
+      return new Response(null, { status: 302, headers: { Location: 'https://untrusted.example' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await sortMessage(sortingEnv, id);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.typesafe.ai/v1/systemone');
+    expect((await list()).messages[0].category).toBe('inbox');
+    expect((await list()).sorting.delayed).toBe(1);
+  });
+
+  it('does not let an in-flight automatic result undo a manual correction', async () => {
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      expect((await request(`/api/messages/${id}`, 'PATCH', { action: 'inbox' })).status).toBe(200);
+      return Response.json(answer());
+    }));
+    await sortMessage(sortingEnv, id);
+    expect((await list()).messages[0]).toMatchObject({ category: 'inbox', category_source: 'manual' });
+  });
+
+  it('claims a message once across concurrent jobs and recovers an expired lease', async () => {
+    const fetcher = vi.fn(async () => Response.json(answer())); vi.stubGlobal('fetch', fetcher);
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await bindings.DB.prepare('UPDATE messages SET sort_token = ?, sort_due_at = ? WHERE id = ?').bind('abandoned-worker', Date.now() - 1, id).run();
+    await Promise.all([sortMessage(sortingEnv, id), sortMessage(sortingEnv, id)]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((await list('promotions')).messages).toHaveLength(1);
+  });
+
+  it('bounds daily API spending and leaves excess mail safely queued', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const day = new Date().toISOString().slice(0, 10);
+    await bindings.DB.prepare('INSERT INTO sorting_usage (day, requests) VALUES (?, 500)').bind(day).run();
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await sortMessage(sortingEnv, id);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await list()).messages).toHaveLength(1);
+    expect((await list()).sorting).toMatchObject({ pending: 1, delayed: 1 });
+  });
+
+  it('preserves a promotional category through trash/restore and skips trashed mail', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const id = (await receiveMail(incoming(advert), testEnv))!;
+    await request(`/api/messages/${id}`, 'PATCH', { action: 'promotions' });
+    await request(`/api/messages/${id}`, 'PATCH', { action: 'trash' });
+    await sortPending(sortingEnv);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await list('all')).messages).toHaveLength(0);
+    await request(`/api/messages/${id}`, 'PATCH', { action: 'restore' });
+    expect((await list('promotions')).messages[0]).toMatchObject({ category: 'promotions', category_source: 'manual' });
+  });
 });
 
 describe('private inbox', () => {

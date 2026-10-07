@@ -4,6 +4,7 @@ import { getInbox } from './inbox';
 import { getRaw, MAX_EMAIL_BYTES, normalizeAddress, receiveMail } from './mail';
 import { HttpError, type Env } from './types';
 import { emailDocument, emailHeaders } from './html';
+import { sortMessage, sortPending, sortingStatus } from './sorting';
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
@@ -55,7 +56,7 @@ async function api(request: Request, env: Env): Promise<Response> {
   }
   if (path === '/api/settings' && method === 'GET') {
     const stats = await env.DB.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(stored_size), 0) AS bytes, MAX(received_at) AS lastReceived FROM messages').first();
-    return json({ domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats });
+    return json({ domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats, sorting: await sortingStatus(env) });
   }
   const match = path.match(/^\/api\/messages\/([a-f0-9-]{36})(?:\/(raw|body|attachments\/\d+))?$/);
   if (match) {
@@ -85,7 +86,7 @@ async function api(request: Request, env: Env): Promise<Response> {
       });
     }
     if (!action && method === 'GET') {
-      const { fingerprint: _fingerprint, stored_size: _storedSize, ...message } = row;
+      const { fingerprint: _fingerprint, stored_size: _storedSize, sort_token: _sortToken, sort_scores: _sortScores, ...message } = row;
       return json({ ...message, attachments: JSON.parse(row.attachments as string) });
     }
     if (!action && method === 'PATCH') {
@@ -94,6 +95,9 @@ async function api(request: Request, env: Env): Promise<Response> {
         await env.DB.prepare('UPDATE messages SET is_read = ? WHERE id = ?').bind(Number(body.action === 'read'), id).run();
       } else if (body.action === 'trash' || body.action === 'restore') {
         await env.DB.prepare('UPDATE messages SET deleted_at = ? WHERE id = ?').bind(body.action === 'trash' ? Date.now() : null, id).run();
+      } else if (body.action === 'inbox' || body.action === 'promotions') {
+        await env.DB.prepare(`UPDATE messages SET category = ?, category_source = 'manual', sorted_at = ?, sort_token = NULL WHERE id = ?`)
+          .bind(body.action, Date.now(), id).run();
       } else throw new HttpError(400, '지원하지 않는 작업입니다.');
       return json({ ok: true });
     }
@@ -121,5 +125,10 @@ export default {
       return secured(json({ error: '잠시 연결이 원활하지 않습니다. 다시 시도해 주세요.' }, 500));
     }
   },
-  email: receiveMail,
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
+    const id = await receiveMail(message, env);
+    // SMTP delivery succeeds once safely stored. Classification failures never lose mail.
+    if (id) ctx.waitUntil(sortMessage(env, id).catch(() => console.warn(JSON.stringify({ event: 'mail_sorting_deferred', reason: 'storage_unavailable' }))));
+  },
+  async scheduled(_event: ScheduledController, env: Env) { await sortPending(env); },
 } satisfies ExportedHandler<Env>;

@@ -4,6 +4,7 @@ export interface Env {
   LOGIN_LIMITER: RateLimit;
   MAIL_DOMAIN: string;
   PUBLIC_ORIGIN: string;
+  TYPESAFE_API_KEY?: string;
 }
 
 export class HttpError extends Error {

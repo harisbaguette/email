@@ -85,7 +85,7 @@ export function formatBytes(bytes: number) {
 }
 
 export function SettingsDialog({ domain, onClose, notify }: { domain: string; onClose: () => void; notify: (text: string) => void }) {
-  const [stats, setStats] = useState<{ total: number; bytes: number; maxEmailBytes: number } | null>(null);
+  const [stats, setStats] = useState<{ total: number; bytes: number; maxEmailBytes: number; sorting: { enabled: boolean; pending: number; delayed: number } } | null>(null);
   const [currentPassword, setCurrent] = useState('');
   const [newPassword, setNew] = useState('');
   const [busy, setBusy] = useState(false);
@@ -99,6 +99,9 @@ export function SettingsDialog({ domain, onClose, notify }: { domain: string; on
   }
   return <Modal title="수신함 설정" onClose={onClose}>
     <dl className="settings-stats"><div><dt>메일 도메인</dt><dd>{domain}</dd></div><div><dt>보관 중</dt><dd>{stats ? `${stats.total}개 · ${formatBytes(stats.bytes)}` : '불러오는 중…'}</dd></div><div><dt>보관 기간</dt><dd>자동 삭제 없음</dd></div><div><dt>메일 한 통 크기</dt><dd>첨부 포함 {stats ? formatBytes(stats.maxEmailBytes) : '10 MB'}까지</dd></div></dl>
+    <div className="sorting-settings"><h3>광고 자동 정리</h3><p>{!stats ? '불러오는 중…' : !stats.sorting.enabled ? '아직 연결되지 않았어요. 메일은 받은 메일에 보관합니다.' : stats.sorting.delayed ? `${stats.sorting.delayed}개 재시도 대기 · 메일은 안전하게 보관 중` : stats.sorting.pending ? `켜짐 · ${stats.sorting.pending}개 정리 중` : '켜짐 · 새 메일이 오면 자동으로 정리해요.'}</p>
+      <p>광고·뉴스레터는 광고·소식으로, 인증·결제·보안 메일은 받은 메일로 모아요. 잘못 분류된 메일은 열어서 옮길 수 있어요.</p>
+      <p className="field-hint">분류할 때 제목과 본문 일부를 Jev에 보냅니다. 링크·이메일 주소·긴 숫자는 가리고, 첨부 파일은 보내지 않습니다.</p></div>
     <form onSubmit={submit} className="password-form"><h3>비밀번호 변경</h3>
       <label htmlFor="current-password">현재 비밀번호</label><input type="password" id="current-password" value={currentPassword} autoComplete="current-password" required onChange={e => setCurrent(e.target.value)} />
       <label htmlFor="new-password">새 비밀번호</label><input type="password" id="new-password" value={newPassword} autoComplete="new-password" minLength={12} maxLength={72} required onChange={e => setNew(e.target.value)} />

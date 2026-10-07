@@ -81,6 +81,7 @@ export async function receiveMail(message: ForwardableEmailMessage, env: Env) {
     console.error(JSON.stringify({ event: 'email_store_failed', error: error instanceof Error ? error.name : 'Error' }));
     throw error;
   }
+  return id;
 }
 
 export async function getRaw(env: Env, id: string): Promise<ArrayBuffer | null> {

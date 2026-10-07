@@ -1,15 +1,18 @@
 import type { InboxResult, MessageSummary } from '../shared/types';
 import { HttpError, type Env } from './types';
 import { normalizeAddress } from './mail';
+import { sortingStatus } from './sorting';
 
 export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   const folder = url.searchParams.get('folder') || 'inbox';
-  if (!['inbox', 'unread', 'trash'].includes(folder)) throw new HttpError(400, '수신함을 찾을 수 없습니다.');
+  if (!['inbox', 'unread', 'promotions', 'all', 'trash'].includes(folder)) throw new HttpError(400, '수신함을 찾을 수 없습니다.');
   const recipient = url.searchParams.get('address') || '';
   if (recipient && !normalizeAddress(recipient, env.MAIL_DOMAIN)) throw new HttpError(400, '이메일 주소를 확인해 주세요.');
   const q = (url.searchParams.get('q') || '').trim().slice(0, 200);
   const clauses = [folder === 'trash' ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
   const params: (string | number)[] = [];
+  if (folder === 'inbox' || folder === 'unread') clauses.push("category = 'inbox'");
+  if (folder === 'promotions') clauses.push("category = 'promotions'");
   if (folder === 'unread') clauses.push('is_read = 0');
   if (recipient) { clauses.push('recipient = ?'); params.push(recipient); }
   if (q) {
@@ -30,14 +33,16 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   }
   const results = await env.DB.batch([
     env.DB.prepare(`SELECT id, recipient, sender_address, sender_name, subject, preview,
-      attachments, received_at, is_read, deleted_at FROM messages
+      attachments, received_at, is_read, deleted_at, category, category_source FROM messages
       WHERE ${clauses.join(' AND ')} ORDER BY received_at DESC, id DESC LIMIT 51`).bind(...params),
     env.DB.prepare(`SELECT
-      COALESCE(SUM(deleted_at IS NULL), 0) AS inbox,
-      COALESCE(SUM(deleted_at IS NULL AND is_read = 0), 0) AS unread,
+      COALESCE(SUM(deleted_at IS NULL AND category = 'inbox'), 0) AS inbox,
+      COALESCE(SUM(deleted_at IS NULL AND category = 'inbox' AND is_read = 0), 0) AS unread,
+      COALESCE(SUM(deleted_at IS NULL AND category = 'promotions'), 0) AS promotions,
+      COALESCE(SUM(deleted_at IS NULL), 0) AS 'all',
       COALESCE(SUM(deleted_at IS NOT NULL), 0) AS trash FROM messages`),
     env.DB.prepare(`SELECT a.address,
-      COUNT(m.id) AS count, COALESCE(SUM(m.is_read = 0), 0) AS unread
+      COUNT(m.id) AS count, COALESCE(SUM(m.is_read = 0 AND m.category = 'inbox'), 0) AS unread
       FROM addresses a LEFT JOIN messages m ON m.recipient = a.address AND m.deleted_at IS NULL
       GROUP BY a.address ORDER BY a.created_at DESC, a.address`),
   ]);
@@ -49,6 +54,7 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
     messages: page.map(row => ({ ...row, attachments: JSON.parse(row.attachments as string) })) as MessageSummary[],
     counts: results[1].results[0] as InboxResult['counts'],
     addresses: results[2].results as unknown as InboxResult['addresses'],
+    sorting: await sortingStatus(env),
     nextCursor: more && last ? btoa(JSON.stringify([last.received_at, last.id])) : null,
   };
 }

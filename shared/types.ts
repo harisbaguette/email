@@ -15,6 +15,8 @@ export interface MessageSummary {
   received_at: number;
   is_read: number;
   deleted_at: number | null;
+  category: 'inbox' | 'promotions';
+  category_source: 'pending' | 'automatic' | 'protected' | 'manual';
   attachments: AttachmentMeta[];
 }
 
@@ -30,8 +32,9 @@ export interface AddressInfo { address: string; count: number; unread: number }
 export interface InboxResult {
   messages: MessageSummary[];
   addresses: AddressInfo[];
-  counts: { inbox: number; unread: number; trash: number };
+  counts: { inbox: number; unread: number; promotions: number; all: number; trash: number };
+  sorting: { enabled: boolean; pending: number; delayed: number };
   nextCursor: string | null;
 }
 
-export type Folder = 'inbox' | 'unread' | 'trash';
+export type Folder = 'inbox' | 'unread' | 'promotions' | 'all' | 'trash';

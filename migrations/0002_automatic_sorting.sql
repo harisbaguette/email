@@ -1,0 +1,10 @@
+ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT 'inbox' CHECK (category IN ('inbox', 'promotions'));
+ALTER TABLE messages ADD COLUMN category_source TEXT NOT NULL DEFAULT 'pending' CHECK (category_source IN ('pending', 'automatic', 'protected', 'manual'));
+ALTER TABLE messages ADD COLUMN sorted_at INTEGER;
+ALTER TABLE messages ADD COLUMN sort_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN sort_due_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN sort_token TEXT;
+ALTER TABLE messages ADD COLUMN sort_scores TEXT;
+CREATE INDEX messages_category ON messages(deleted_at, category, received_at DESC, id DESC);
+CREATE INDEX messages_sort_pending ON messages(category_source, deleted_at, sort_due_at);
+CREATE TABLE sorting_usage (day TEXT PRIMARY KEY, requests INTEGER NOT NULL DEFAULT 0);

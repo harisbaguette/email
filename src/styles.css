@@ -173,6 +173,13 @@
   .load-more:hover { background: var(--sidebar); }
   .connection-error { padding: 10px 24px; background: #fff5ed; color: #9e4520; display: flex; gap: 15px; align-items: center; justify-content: space-between; font-size: 13px; }
   .connection-error button { text-decoration: underline; min-height: 44px; white-space: nowrap; }
+  .sorting-notice { padding: 10px 24px; background: #fff5ed; color: #9e4520; font-size: 13px; line-height: 1.6; }
+  .category-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .category-control .text-button { color: var(--blue); font-size: 12px; flex-shrink: 0; }
+  .promotion-tag { color: #75572d; background: #faf1df; padding: 3px 6px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
+  .sorting-settings { padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .sorting-settings h3 { font-size: 14px; margin-bottom: 8px; }
+  .sorting-settings p { font-size: 13px; line-height: 1.7; margin-top: 8px; color: var(--muted); }
   .detail-error { padding: 40px 25px; text-align: center; color: var(--muted); }
   .detail-error p { margin-bottom: 20px; }
   .inline-notice { margin: 10px 24px; padding: 12px; background: #fff7eb; font-size: 13px; line-height: 1.5; }
