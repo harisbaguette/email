@@ -128,6 +128,7 @@ export async function changePassword(request: Request, env: Env) {
   await env.DB.batch([
     env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'password_hash'").bind(hash),
     env.DB.prepare('DELETE FROM sessions'),
+    env.DB.prepare('DELETE FROM push_subscriptions'),
   ]);
   return createSession(env);
 }

@@ -27,3 +27,32 @@ self.addEventListener('fetch', event => {
     return response;
   })());
 });
+
+self.addEventListener('push', event => {
+  event.waitUntil((async () => {
+    let data = {};
+    try { data = event.data?.json() || {}; } catch { /* Always show a visible, private fallback. */ }
+    const raw = typeof data.url === 'string' ? data.url : '/';
+    let target = '/';
+    try { const url = new URL(raw, self.location.origin); if (url.origin === self.location.origin) target = url.pathname + url.search; } catch {}
+    await self.registration.showNotification(typeof data.title === 'string' ? data.title.slice(0, 100) : 'Bluekite', {
+      body: typeof data.body === 'string' ? data.body.slice(0, 240) : '새 메일이 도착했습니다.',
+      icon: '/brand/icon-192.png', badge: '/brand/notification-badge.png',
+      tag: typeof data.tag === 'string' ? data.tag.slice(0, 80) : 'bluekite-mail',
+      data: { url: target },
+    });
+    const pages = await self.clients.matchAll({ type: 'window' });
+    for (const page of pages) page.postMessage({ type: 'mail-arrived' });
+  })());
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    let url = new URL('/', self.location.origin);
+    try { const candidate = new URL(event.notification.data?.url || '/', self.location.origin); if (candidate.origin === self.location.origin) url = candidate; } catch {}
+    for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) {
+      if (new URL(client.url).origin === url.origin && 'navigate' in client) { await client.navigate(url.href); await client.focus(); return; }
+    }
+    await self.clients.openWindow(url.href);
+  })());
+});

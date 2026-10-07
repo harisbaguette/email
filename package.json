@@ -21,6 +21,7 @@
     "deploy": "npm run build && npm run db:remote && wrangler deploy"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
     "bcryptjs": "^3.0.3",
     "domutils": "^4.0.2",
     "html-to-text": "^10.0.1",

@@ -16,3 +16,6 @@ await writeFile('public/brand/logo.svg', logo);
 const og = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#111D35"/><circle cx="1100" cy="20" r="470" fill="#182B50"/><circle cx="1100" cy="20" r="330" fill="none" stroke="#345179"/><g transform="translate(78 78) scale(1.5)">${paths}</g><text x="200" y="144" fill="white" font-family="Arial,sans-serif" font-weight="600" font-size="48" letter-spacing="-2">bluekite mail</text><text x="90" y="337" fill="white" font-family="Arial,sans-serif" font-weight="600" font-size="72" letter-spacing="-3">bluekite mail</text><text x="94" y="414" fill="#AEC3E5" font-family="Arial,sans-serif" font-size="32">email.bluekite.co.kr</text></svg>`;
 await sharp(Buffer.from(og)).png().toFile('public/brand/social-card.png');
 console.log('Bluekite brand assets generated.');
+
+const badge = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><path d="M48 10 86 42 48 80 10 42Z" fill="white"/><path d="M48 77c-1 10-13 4-13 14" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/></svg>';
+await sharp(Buffer.from(badge)).resize(96, 96).png().toFile('public/brand/notification-badge.png');

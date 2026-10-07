@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { cleanupFixtures } from './helpers';
 import AxeBuilder from '@axe-core/playwright';
+
+const fixtures: string[] = [];
+test.afterEach(async () => { await cleanupFixtures(fixtures.splice(0)); });
 
 test('private inbox: create address, receive MIME, read, search, download, restore, mobile and logout', async ({ page, request, context }) => {
   const { password, username } = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
@@ -19,15 +23,17 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('button', { name: '로그인', exact: true }).click();
   await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '주소 만들기', exact: true }).first().click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: '주소 만들기', exact: true }).first().click();
-  const local = `check-${Date.now()}`;
+  await expect(page.getByRole('button', { name: '새 주소', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '설정', exact: true }).click();
+  await page.getByRole('button', { name: '새 주소', exact: true }).click();
+  await page.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(page.getByLabel('주소 이름')).toHaveCount(0);
+  await page.getByRole('button', { name: '새 주소', exact: true }).click();
+  const local = `check-${Date.now()}`; fixtures.push(local);
   await page.getByLabel('주소 이름').fill(local);
   await page.getByRole('button', { name: '만들고 복사' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('주소 이름')).toHaveCount(0);
+  await page.getByRole('button', { name: '수신함', exact: true }).click();
   await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.has('address')).toBe(false);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${local}@bluekite.co.kr`);
@@ -127,22 +133,27 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('button', { name: '취소', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: '수신함으로 복원' }).click();
-  await page.getByRole('button', { name: '주소 만들기', exact: true }).first().click();
+  await page.getByRole('button', { name: '설정', exact: true }).click();
+  await page.getByRole('button', { name: '새 주소', exact: true }).click();
   const generatedLocal = await page.getByLabel('주소 이름').inputValue();
+  fixtures.push(generatedLocal);
   expect(generatedLocal).toMatch(/^m[a-f0-9]{8}$/);
-  await expect(page.getByRole('button', { name: '만들고 복사' })).toBeFocused();
+  await expect(page.getByLabel('주소 이름')).toBeFocused();
   await page.screenshot({ path: '.local/address-mobile.png', animations: 'disabled' });
   await page.getByRole('button', { name: '만들고 복사' }).click();
-  await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
+  await expect(page.getByLabel('주소 이름')).toHaveCount(0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${generatedLocal}@bluekite.co.kr`);
+  await page.getByRole('button', { name: '수신함', exact: true }).click();
+  await page.getByRole('combobox', { name: '메일함' }).selectOption('inbox');
   await expect(row).toBeVisible();
   expect(new URL(page.url()).searchParams.has('address')).toBe(false);
   await page.screenshot({ path: '.local/waiting-mobile.png', animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByRole('button', { name: '설정', exact: true }).click();
+  await page.getByRole('button', { name: '계정', exact: true }).click();
   await page.getByText('보관과 개인정보', { exact: true }).click();
-  await expect(page.getByText(/메일과 주소는 자동 삭제하지 않습니다/)).toBeVisible();
-  await page.getByRole('button', { name: '로그아웃', exact: true }).click();
+  await expect(page.getByText(/메일은 자동 삭제하지 않습니다/)).toBeVisible();
+  await page.getByRole('button', { name: '이 기기에서 로그아웃', exact: true }).click();
   await expect(page.getByRole('heading', { name: '로그인', exact: true })).toBeVisible();
   expect((await context.request.get('/api/inbox')).status()).toBe(401);
   expect(errors).toEqual([]);

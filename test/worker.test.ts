@@ -41,7 +41,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await bindings.DB.batch(['DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts', 'DELETE FROM sorting_usage'].map(sql => bindings.DB.prepare(sql)));
+  await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts', 'DELETE FROM sorting_usage'].map(sql => bindings.DB.prepare(sql)));
   await bindings.DB.prepare("INSERT INTO settings (key, value) VALUES ('password_hash', ?)").bind(await bcrypt.hash(password, 4)).run();
   const response = await request('/api/login', 'POST', { password }, false);
   expect(response.status).toBe(200);

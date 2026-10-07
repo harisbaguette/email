@@ -7,6 +7,7 @@ import { emailDocument, emailHeaders } from './html';
 import { sortMessage, sortPending, sortingStatus } from './sorting';
 import { verificationCode } from '../shared/verification';
 import { verificationLink } from './verification';
+import { processNotifications, pushStatus, saveSubscription, testNotification, updateSubscription } from './push';
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
@@ -41,7 +42,12 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === '/api/session' && method === 'GET') return json({ authenticated: Boolean(session), domain: env.MAIL_DOMAIN });
   if (!session) throw new HttpError(401, '다시 로그인해 주세요.');
   if (path === '/api/logout' && method === 'POST') {
-    await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(session).run();
+    const body = request.body ? await jsonBody(request) : {};
+    const pushId = typeof body.pushId === 'string' && /^[a-f0-9]{64}$/.test(body.pushId) ? body.pushId : '';
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash = ? OR id = ?').bind(session, pushId),
+      env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(session),
+    ]);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, '', 0) });
   }
   if (path === '/api/password' && method === 'POST') {
@@ -49,6 +55,14 @@ async function api(request: Request, env: Env): Promise<Response> {
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
   }
   if (path === '/api/inbox' && method === 'GET') return json(await getInbox(url, env));
+  if (path === '/api/push' && method === 'GET') return json(await pushStatus(env));
+  if (path === '/api/push' && method === 'POST') return json(await saveSubscription(env, session, await jsonBody(request)));
+  const pushMatch = path.match(/^\/api\/push\/([a-f0-9]{64})(\/test)?$/);
+  if (pushMatch) {
+    if (pushMatch[2] && method === 'POST') { await testNotification(env, pushMatch[1]); return json({ ok: true }); }
+    if (!pushMatch[2] && method === 'PATCH') { await updateSubscription(env, pushMatch[1], await jsonBody(request)); return json({ ok: true }); }
+    if (!pushMatch[2] && method === 'DELETE') { await env.DB.prepare('DELETE FROM push_subscriptions WHERE id=?').bind(pushMatch[1]).run(); return json({ ok: true }); }
+  }
   if (path === '/api/addresses' && method === 'POST') {
     const { local } = await jsonBody(request);
     const address = typeof local === 'string' ? normalizeAddress(`${local}@${env.MAIL_DOMAIN}`, env.MAIL_DOMAIN) : null;
@@ -58,7 +72,8 @@ async function api(request: Request, env: Env): Promise<Response> {
   }
   if (path === '/api/settings' && method === 'GET') {
     const stats = await env.DB.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(stored_size), 0) AS bytes, MAX(received_at) AS lastReceived FROM messages').first();
-    return json({ domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats, sorting: await sortingStatus(env) });
+    const owner = await env.DB.prepare("SELECT value FROM settings WHERE key='login_username'").first<{ value: string }>();
+    return json({ username: owner?.value || 'owner', domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats, sorting: await sortingStatus(env) });
   }
   const match = path.match(/^\/api\/messages\/([a-f0-9-]{36})(?:\/(raw|body|attachments\/\d+))?$/);
   if (match) {
@@ -124,7 +139,7 @@ export default {
     try { return secured(await api(request, env)); }
     catch (error) {
       if (error instanceof HttpError) return secured(json({ error: error.message }, error.status,
-        error.status === 429 ? { 'Retry-After': '900' } : undefined));
+        error.status === 429 ? { 'Retry-After': new URL(request.url).pathname.startsWith('/api/push/') ? '60' : '900' } : undefined));
       console.error(JSON.stringify({ event: 'api_error', error: error instanceof Error ? error.name : 'Error' }));
       return secured(json({ error: '잠시 연결이 원활하지 않습니다. 다시 시도해 주세요.' }, 500));
     }
@@ -132,7 +147,10 @@ export default {
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
     const id = await receiveMail(message, env);
     // SMTP delivery succeeds once safely stored. Classification failures never lose mail.
-    if (id) ctx.waitUntil(sortMessage(env, id).catch(() => console.warn(JSON.stringify({ event: 'mail_sorting_deferred', reason: 'storage_unavailable' }))));
+    if (id) ctx.waitUntil((async () => {
+      try { await sortMessage(env, id); } catch { console.warn(JSON.stringify({ event: 'mail_sorting_deferred', reason: 'storage_unavailable' })); }
+      await processNotifications(env, id);
+    })().catch(() => console.warn(JSON.stringify({ event: 'notification_deferred' }))));
   },
-  async scheduled(_event: ScheduledController, env: Env) { await sortPending(env); },
+  async scheduled(_event: ScheduledController, env: Env) { await sortPending(env); await processNotifications(env); },
 } satisfies ExportedHandler<Env>;

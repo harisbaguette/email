@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { cleanupFixtures } from './helpers';
 import AxeBuilder from '@axe-core/playwright';
+
+const fixtures: string[] = [];
+test.afterEach(async () => { await cleanupFixtures(fixtures.splice(0)); });
 
 test('address creation recovery, address copy and filter, clipboard fallback, and return to list position', async ({ page, context }) => {
   const credentials = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
@@ -9,8 +13,9 @@ test('address creation recovery, address copy and filter, clipboard fallback, an
   await page.getByLabel('비밀번호', { exact: true }).fill(credentials.password);
   await page.getByRole('button', { name: '로그인', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '메일함' })).toBeVisible();
-  const local = `ux-${Date.now()}`;
-  await page.getByRole('button', { name: '주소 만들기', exact: true }).first().click();
+  const local = `ux-${Date.now()}`; fixtures.push(local);
+  await page.getByRole('button', { name: '설정', exact: true }).click();
+  await page.getByRole('button', { name: '새 주소', exact: true }).click();
   await page.getByLabel('주소 이름').fill(local);
   await context.route('**/api/addresses', route => route.fulfill({ status: 503, json: { error: '연결을 확인해 주세요.' } }));
   await page.getByRole('button', { name: '만들고 복사' }).click();
@@ -18,12 +23,12 @@ test('address creation recovery, address copy and filter, clipboard fallback, an
   await expect(page.getByLabel('주소 이름')).toHaveValue(local);
   await context.unroute('**/api/addresses');
   await page.getByRole('button', { name: '만들고 복사' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('주소 이름')).toHaveCount(0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${local}@bluekite.co.kr`);
-  await page.getByRole('button', { name: '주소', exact: true }).click();
-  await page.getByRole('searchbox', { name: '주소 검색' }).fill(local);
+  const addressSearch = page.getByRole('searchbox', { name: '주소 검색' });
+  if (await addressSearch.count()) await addressSearch.fill(local);
   await page.getByRole('button', { name: `${local}@bluekite.co.kr 복사`, exact: true }).click();
-  await expect(page.getByRole('dialog').getByRole('status')).toContainText('복사됨');
+  await expect(page.locator('.settings-content').getByRole('status')).toContainText('복사됨');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${local}@bluekite.co.kr`);
   await page.getByRole('button', { name: `${local}@bluekite.co.kr 메일 보기`, exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);

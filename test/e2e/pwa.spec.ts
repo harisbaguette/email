@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 
-test('branded login, installability, install fallback and private offline behavior', async ({ page, context, request }) => {
+test('branded login, installability, native installation and private offline behavior', async ({ page, context, request }) => {
   const missing: string[] = [];
   page.on('response', response => { if (response.status() === 404 && new URL(response.url()).origin === 'http://127.0.0.1:8787') missing.push(response.url()); });
   await page.goto('/');
@@ -26,26 +26,13 @@ test('branded login, installability, install fallback and private offline behavi
   await page.setViewportSize({ width: 375, height: 812 });
   await page.screenshot({ path: '.local/brand-login-mobile.png', fullPage: true, animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  // Chromium may defer its native prompt until engagement criteria are met.
-  // A fresh page with that event suppressed exercises the browser-menu fallback.
-  await page.addInitScript(() => window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); event.stopImmediatePropagation(); }, true));
-  await page.reload();
-  await page.getByRole('button', { name: '앱 설치', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '앱 설치' })).toBeVisible();
-  await page.getByRole('button', { name: '확인', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '앱 설치', exact: true })).toHaveCount(0);
   const credentials = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
   await page.getByLabel('아이디', { exact: true }).fill(credentials.username);
   await page.getByLabel('비밀번호', { exact: true }).fill(credentials.password);
   await page.getByRole('button', { name: '로그인', exact: true }).click();
   await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '설정', exact: true }).click();
-  await page.getByRole('button', { name: '앱 설치', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '앱 설치', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: '앱 설치', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: '설정', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '닫기', exact: true }).click();
+  await expect(page.getByRole('button', { name: '앱 설치', exact: true })).toHaveCount(0);
   const cached = await page.evaluate(async () => {
     const names = await caches.keys();
     return (await Promise.all(names.map(async name => (await (await caches.open(name)).keys()).map(item => item.url)))).flat();

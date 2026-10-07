@@ -9,7 +9,7 @@ export default defineConfig({
     miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
   })],
   test: {
-    include: ['test/worker.test.ts'], fileParallelism: false,
+    include: ['test/*.test.ts'], fileParallelism: false,
     deps: { optimizer: { ssr: { enabled: true, include: ['sanitize-html'] } } },
   },
 });

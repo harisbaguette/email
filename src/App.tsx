@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, Copy, Download, Inbox, Mail, MailOpen, Plus, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip, Megaphone, ArrowUpRight } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, Download, Inbox, Mail, MailOpen, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip, Megaphone, ArrowUpRight } from 'lucide-react';
 import type { Folder, InboxResult, MailMessage, MessageSummary } from '../shared/types';
 import { api, copyText, errorMessage } from './api';
-import { AddressBook, AddressDialog, ActionMenu, Brand, EmptyState, formatBytes, Login, Modal, SettingsDialog, Toast } from './components';
+import { ActionMenu, Brand, EmptyState, formatBytes, Login, Modal, Toast } from './components';
+import { SettingsPage, type SettingsTab } from './Settings';
+import { logout } from './notifications';
 import { EmailBody } from './EmailBody';
 import { verificationCode } from '../shared/verification';
 
@@ -16,6 +18,7 @@ function initialLocation() {
   const params = new URLSearchParams(location.search);
   const folder = params.get('folder');
   return { folder: (folder && ['unread', 'promotions', 'all', 'trash'].includes(folder) ? folder : 'inbox') as Folder,
+    settings: (['addresses', 'notifications', 'account'].includes(params.get('settings') || '') ? params.get('settings') : params.has('new-address') ? 'addresses' : null) as SettingsTab | null,
     address: params.get('address') || '', query: params.get('q') || '', selected: params.get('message') || null };
 }
 
@@ -43,7 +46,7 @@ export function App() {
 
 function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void }) {
   const [view, setView] = useState(initialLocation);
-  const { folder, address, query, selected } = view;
+  const { folder, address, query, selected, settings } = view;
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<InboxResult>(emptyInbox);
   const [loading, setLoading] = useState(true);
@@ -54,7 +57,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   const [messageError, setMessageError] = useState('');
   const [messageBusy, setMessageBusy] = useState(false);
   const [messageVersion, setMessageVersion] = useState(0);
-  const [dialog, setDialog] = useState<'address' | 'addresses' | 'settings' | 'delete' | null>(() => new URLSearchParams(location.search).has('new-address') ? 'address' : null);
+  const [dialog, setDialog] = useState<'delete' | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const [copyFallback, setCopyFallback] = useState<{ value: string; label: string } | null>(null);
@@ -97,9 +100,10 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     if (next.address) params.set('address', next.address);
     if (next.query) params.set('q', next.query);
     if (next.selected) params.set('message', next.selected);
+    if (next.settings) params.set('settings', next.settings);
     const url = `${location.pathname}${params.size ? `?${params}` : ''}`;
-    if (push) history.pushState({ mailDetail: true }, '', url);
-    else history.replaceState(null, '', url);
+    if (push) history.pushState({ mailDetail: !next.settings, settingsPage: Boolean(next.settings) }, '', url);
+    else history.replaceState(next.settings && view.settings ? history.state : null, '', url);
     setView(next);
   }
 
@@ -108,7 +112,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     const key = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        if (selected) navigate({ selected: null });
+        if (selected || settings) navigate({ selected: null, settings: null });
         requestAnimationFrame(() => searchRef.current?.focus());
       }
     };
@@ -144,6 +148,16 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     document.addEventListener('visibilitychange', poll); window.addEventListener('online', poll);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); window.removeEventListener('online', poll); };
   }, [refresh, loadedMore, address, folder]);
+
+  useEffect(() => {
+    const arrived = (event: MessageEvent) => { if (event.data?.type === 'mail-arrived') void refresh(true); };
+    navigator.serviceWorker?.addEventListener('message', arrived);
+    return () => navigator.serviceWorker?.removeEventListener('message', arrived);
+  }, [refresh]);
+  useLayoutEffect(() => {
+    if (settings) { window.scrollTo(0, 0); document.querySelector<HTMLElement>('.settings-title h1')?.focus({ preventScroll: true }); }
+    else if (!selected) window.scrollTo(0, listScroll.current);
+  }, [settings]);
 
   useEffect(() => {
     setMessage(null); setMessageError('');
@@ -183,7 +197,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
 
   function chooseFolder(folder: Folder, address = '') {
     listScroll.current = 0;
-    setSearch(''); navigate({ folder, address, selected: null, query: '' });
+    setSearch(''); navigate({ folder, address, selected: null, query: '', settings: null });
   }
 
   function back() {
@@ -217,9 +231,10 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }
   return <div className="mail-app">
     <header className="app-header"><button className="brand-home" onClick={() => chooseFolder('inbox')} aria-label="받은 메일로 이동"><Brand /></button>
-      <div className="app-actions"><button className="text-button" onClick={() => setDialog('addresses')}>주소</button><button className="primary-button" onClick={() => setDialog('address')} aria-label="주소 만들기"><Plus size={16} />새 주소</button><button className="icon-button" onClick={() => setDialog('settings')} aria-label="설정" title="설정"><Settings size={19} /></button></div>
+      <div className="app-actions"><button className={`text-button settings-entry ${settings ? 'is-active' : ''}`} onClick={() => { if (!settings) { listScroll.current = window.scrollY; navigate({ settings: 'addresses' }, true); } }} aria-label="설정"><Settings size={18} />설정</button></div>
     </header>
-    <main className={`workspace ${selected ? 'detail-open' : ''}`}>
+    {settings && <SettingsPage loading={loading} error={listError} onRetry={() => void refresh()} domain={domain} addresses={data.addresses} tab={settings} createInitially={new URLSearchParams(location.search).has('new-address')} onTab={tab => navigate({ settings: tab })} onClose={() => { if (history.state?.settingsPage) history.back(); else navigate({ settings: null }); }} onCreated={() => void refresh(true)} onSelect={value => chooseFolder('all', value)} onLogout={() => { void logout().then(onLogout).catch(error => notify(errorMessage(error))); }} />}
+    <main hidden={Boolean(settings)} className={`workspace ${selected ? 'detail-open' : ''}`}>
       {listError && <div className="connection-error" role="alert"><span>{listError}</span><button onClick={() => void refresh()}>다시 시도</button></div>}
       {!online && <div className="connection-error" role="status">오프라인입니다.</div>}
       <section className="mail-list" aria-label="메일 목록" hidden={Boolean(selected)}>
@@ -230,7 +245,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
         <div className="list-scroll" aria-busy={loading}>
           {loading ? <div className="list-loading" role="status">불러오는 중…</div>
             : data.messages.length ? data.messages.map(item => <MailRow key={item.id} item={item} onClick={() => { listScroll.current = window.scrollY; navigate({ selected: item.id }, true); }} onCopyCode={() => void copyCode(item.verification_code!)} />)
-              : !listError && <EmptyState filtered={folder !== 'inbox' || Boolean(address)} query={query} onAdd={() => setDialog('address')} />}
+              : !listError && <EmptyState query={query} />}
           {!loading && data.nextCursor && <button className="load-more" onClick={() => void more()} disabled={refreshing}>{refreshing ? '불러오는 중…' : '더 보기'}</button>}
         </div>
       </section>
@@ -259,9 +274,6 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
           <EmailBody key={message.id} message={message} /></>}
       </section>}
     </main>
-    {dialog === 'addresses' && <AddressBook addresses={data.addresses} onClose={() => setDialog(null)} onNew={() => setDialog('address')} onSelect={value => { setDialog(null); chooseFolder('all', value); }} />}
-    {dialog === 'address' && <AddressDialog domain={domain} onClose={() => { setDialog(null); void refresh(true); }} onCreated={newAddress => { setDialog(null); chooseFolder('inbox'); void refresh(true); notify(`${newAddress} 복사됨`); }} />}
-    {dialog === 'settings' && <SettingsDialog domain={domain} onClose={() => setDialog(null)} notify={notify} onLogout={() => { void api('/api/logout', { method: 'POST' }).then(onLogout).catch(e => notify(errorMessage(e))); }} />}
     {dialog === 'delete' && <Modal title="메일을 영구 삭제할까요?" onClose={() => setDialog(null)}><p className="delete-description">메일과 첨부 파일이 삭제되며 복원할 수 없습니다.</p><div className="modal-actions"><button className="secondary-button" autoFocus onClick={() => setDialog(null)}>취소</button><button className="danger-button" disabled={messageBusy} onClick={() => void mutate('delete')}>{messageBusy ? '삭제 중…' : '영구 삭제'}</button></div></Modal>}
     {copyFallback && <Modal title="직접 복사" onClose={() => setCopyFallback(null)}><p className="field-hint">자동 복사가 차단되었습니다. 선택된 값을 복사할 수 있습니다.</p><input className="copy-fallback" aria-label={copyFallback.label} readOnly value={copyFallback.value} data-dialog-autofocus onFocus={event => event.target.select()} /><div className="modal-actions"><button className="primary-button" onClick={() => setCopyFallback(null)}>확인</button></div></Modal>}
     {toast && <Toast text={toast.text} undo={toast.undo} />}

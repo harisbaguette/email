@@ -5,6 +5,8 @@ export interface Env {
   MAIL_DOMAIN: string;
   PUBLIC_ORIGIN: string;
   TYPESAFE_API_KEY?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
 }
 
 export class HttpError extends Error {

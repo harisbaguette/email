@@ -17,7 +17,7 @@ const sqlFile = resolve(`.local/password-${mode.slice(2)}.sql`);
 const usernameSQL = requested
   ? `INSERT INTO settings (key, value) VALUES ('login_username', '${requested.username}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
   : "INSERT OR IGNORE INTO settings (key, value) VALUES ('login_username', 'owner');";
-await writeFile(sqlFile, `INSERT INTO settings (key, value) VALUES ('password_hash', '${hash}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n${usernameSQL}\nDELETE FROM sessions;\nDELETE FROM login_attempts;\n`, { mode: 0o600 });
+await writeFile(sqlFile, `INSERT INTO settings (key, value) VALUES ('password_hash', '${hash}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n${usernameSQL}\nDELETE FROM sessions;\nDELETE FROM push_subscriptions;\nDELETE FROM login_attempts;\n`, { mode: 0o600 });
 try {
   const result = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'd1', 'execute', 'bluekite-mail', mode, '--file', sqlFile], { encoding: 'utf8' });
   if (result.status !== 0) {
