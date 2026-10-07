@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Bluekite Mail",
   "short_name": "Bluekite",
-  "description": "모든 주소를 한곳에. 인증번호와 확인 링크를 빠르게 여는 개인 수신함.",
+  "description": "수신 전용 이메일",
   "lang": "ko",
   "start_url": "/",
   "scope": "/",
