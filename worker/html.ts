@@ -38,7 +38,12 @@ export function emailDocument(html: string, allowImages: boolean) {
     table { max-width: 100% !important; }
     a { color: #2458ce; text-decoration: underline; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-    @media(max-width:500px) { body { padding: 16px; } td { overflow-wrap: anywhere; } }
+    @media(max-width:500px) {
+      body { padding: 16px; }
+      table, td, th, div { min-width: 0 !important; max-width: 100% !important; box-sizing: border-box; }
+      table { width: 100% !important; table-layout: fixed !important; }
+      td, th { overflow-wrap: anywhere; }
+    }
   </style></head><body>${clean}</body></html>`;
 }
 

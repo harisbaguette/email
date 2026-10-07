@@ -40,7 +40,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
     '--body-boundary', 'Content-Type: text/plain; charset=utf-8', '',
     'Bluekite 수신 확인. 인증번호는 482913입니다. https://example.com/verify',
     '--body-boundary', 'Content-Type: text/html; charset=utf-8', '',
-    '<style>.verification { background-color: #2458ce; color: #fff; padding: 10px; display: inline-block; }</style><h1>Bluekite 수신 확인</h1><p>인증번호는 <strong>482913</strong>입니다.</p><a class="verification" href="https://example.com/verify">이메일 확인</a><img src="https://tracker.invalid/pixel.png"><script>window.parent.hacked=true</script><img src="x" onerror="window.parent.hacked=true"><a href="javascript:alert(1)">unsafe</a>',
+    '<style>.verification { background-color: #2458ce; color: #fff; padding: 10px; display: inline-block; }</style><table style="width:640px;min-width:640px"><tr><td><h1>Bluekite 수신 확인</h1><p>인증번호는 <strong>482913</strong>입니다.</p><a class="verification" href="https://example.com/verify">이메일 확인</a><img src="https://tracker.invalid/pixel.png"><script>window.parent.hacked=true</script><img src="x" onerror="window.parent.hacked=true"><a href="javascript:alert(1)">unsafe</a></td></tr></table>',
     '--body-boundary--', '--test-boundary', 'Content-Type: application/octet-stream',
     'Content-Disposition: attachment; filename="hello.txt"', 'Content-Transfer-Encoding: base64', '',
     Buffer.from('Hello, Bluekite!').toString('base64'), '--test-boundary--', '',
@@ -77,6 +77,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.setViewportSize({ width: 375, height: 812 });
   await expect(page.getByRole('button', { name: '메일 목록으로' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect(await frame.locator('html').evaluate(element => element.scrollWidth <= element.clientWidth)).toBeTruthy();
   await page.screenshot({ path: '.local/inbox-mobile-detail.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '메일 목록으로' }).click();
   await expect(row).toBeVisible();
