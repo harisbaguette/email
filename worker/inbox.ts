@@ -2,6 +2,7 @@ import type { InboxResult, MessageSummary } from '../shared/types';
 import { HttpError, type Env } from './types';
 import { normalizeAddress } from './mail';
 import { sortingStatus } from './sorting';
+import { verificationCode } from '../shared/verification';
 
 export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   const folder = url.searchParams.get('folder') || 'inbox';
@@ -33,7 +34,7 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   }
   const results = await env.DB.batch([
     env.DB.prepare(`SELECT id, recipient, sender_address, sender_name, subject, preview,
-      attachments, received_at, is_read, deleted_at, category, category_source FROM messages
+      attachments, received_at, is_read, deleted_at, category, category_source, body_text FROM messages
       WHERE ${clauses.join(' AND ')} ORDER BY received_at DESC, id DESC LIMIT 51`).bind(...params),
     env.DB.prepare(`SELECT
       COALESCE(SUM(deleted_at IS NULL AND category = 'inbox'), 0) AS inbox,
@@ -51,7 +52,7 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   const page = rows.slice(0, 50);
   const last = page.at(-1);
   return {
-    messages: page.map(row => ({ ...row, attachments: JSON.parse(row.attachments as string) })) as MessageSummary[],
+    messages: page.map(({ body_text, ...row }) => ({ ...row, verification_code: verificationCode(row.subject as string, body_text as string), attachments: JSON.parse(row.attachments as string) })) as MessageSummary[],
     counts: results[1].results[0] as InboxResult['counts'],
     addresses: results[2].results as unknown as InboxResult['addresses'],
     sorting: await sortingStatus(env),

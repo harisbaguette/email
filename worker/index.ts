@@ -5,6 +5,8 @@ import { getRaw, MAX_EMAIL_BYTES, normalizeAddress, receiveMail } from './mail';
 import { HttpError, type Env } from './types';
 import { emailDocument, emailHeaders } from './html';
 import { sortMessage, sortPending, sortingStatus } from './sorting';
+import { verificationCode } from '../shared/verification';
+import { verificationLink } from './verification';
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
@@ -87,7 +89,9 @@ async function api(request: Request, env: Env): Promise<Response> {
     }
     if (!action && method === 'GET') {
       const { fingerprint: _fingerprint, stored_size: _storedSize, sort_token: _sortToken, sort_scores: _sortScores, ...message } = row;
-      return json({ ...message, attachments: JSON.parse(row.attachments as string) });
+      return json({ ...message, attachments: JSON.parse(row.attachments as string),
+        verification_code: verificationCode(row.subject as string, row.body_text as string),
+        verification_link: verificationLink(row.subject as string, row.body_text as string, row.body_html as string) });
     }
     if (!action && method === 'PATCH') {
       const body = await jsonBody(request);

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 
 test('private inbox: create address, receive MIME, read, search, download, restore, mobile and logout', async ({ page, request, context }) => {
-  const { password } = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
+  const { password, username } = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
   const errors: string[] = [];
   const trackingRequests: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -14,6 +14,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '내 수신함에 로그인' })).toBeVisible();
   expect((await request.get('/api/inbox')).status()).toBe(401);
+  await page.getByLabel('아이디', { exact: true }).fill(username);
   await page.getByLabel('비밀번호', { exact: true }).fill(password);
   await page.getByRole('button', { name: '수신함 열기' }).click();
   await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
@@ -50,11 +51,19 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   const sent = await request.post(`/cdn-cgi/handler/email?from=test@example.net&to=${local}@bluekite.co.kr`, { data: raw, headers: { 'Content-Type': 'text/plain' } });
   expect(sent.ok(), await sent.text()).toBeTruthy();
   await page.getByRole('button', { name: '새로고침', exact: true }).click();
-  const row = page.getByRole('button', { name: new RegExp(subject) }).filter({ hasText: local });
+  const row = page.locator('.row-open').filter({ hasText: subject }).filter({ hasText: local });
   await expect(row).toBeVisible();
+  await page.getByRole('button', { name: '최근 인증번호 복사', exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('482913');
+  const beforeOpen = new URL(page.url()).searchParams.get('message');
+  await row.locator('..').getByRole('button', { name: /인증번호 복사/ }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('482913');
+  expect(new URL(page.url()).searchParams.get('message')).toBe(beforeOpen);
   await row.click();
   await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '인증번호 복사' }).click();
+  await expect(page.getByRole('link', { name: /이메일 확인 링크 열기/ })).toHaveAttribute('href', 'https://example.com/verify');
+  await expect(page.getByRole('link', { name: /이메일 확인 링크 열기/ })).toHaveAttribute('rel', 'noopener noreferrer');
+  await page.getByRole('button', { name: '인증번호 복사', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('482913');
   const frame = page.frameLocator('iframe[title="메일 본문"]');
   await expect(frame.getByText('482913', { exact: true })).toBeVisible();
@@ -72,18 +81,19 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   expect(await readFile((await download.path())!, 'utf8')).toBe(raw);
   const [attachment] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: /hello.txt/ }).click()]);
   expect(await readFile((await attachment.path())!, 'utf8')).toBe('Hello, Bluekite!');
-  await page.getByRole('button', { name: '광고·소식으로 이동', exact: true }).click();
+  await page.getByRole('button', { name: '광고와 소식으로 이동', exact: true }).click();
   await expect(row).toHaveCount(0);
-  await page.getByRole('navigation', { name: '메일함' }).getByRole('button', { name: /광고·소식/ }).click();
+  await page.getByRole('navigation', { name: '메일함' }).getByRole('button', { name: /광고와 소식/ }).click();
   await expect(row).toBeVisible();
   await row.click();
-  await expect(page.getByText('광고·소식 · 직접 분류')).toBeVisible();
+  await expect(page.getByText('광고와 소식 / 직접 분류')).toBeVisible();
   await page.screenshot({ path: '.local/promotions-desktop.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '광고 아님', exact: true }).click();
   await expect(row).toHaveCount(0);
   await page.getByRole('navigation', { name: '메일함' }).getByRole('button', { name: /받은 메일/ }).click();
   await expect(row).toBeVisible();
   await row.click();
+  await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
   await page.screenshot({ path: '.local/inbox-desktop.png', fullPage: true, animations: 'disabled' });
   // Audit our UI; arbitrary sender HTML runs in a script-disabled, opaque-origin frame.
   const desktopAudit = await new AxeBuilder({ page }).exclude('iframe').options({ iframes: false })
@@ -101,7 +111,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('searchbox', { name: '메일 검색' }).fill('482913');
   await expect(row).toBeVisible();
   await page.getByRole('searchbox', { name: '메일 검색' }).fill('존재하지않는검색어');
-  await expect(page.getByText('검색 결과가 없어요')).toBeVisible();
+  await expect(page.getByText('검색 결과가 없습니다')).toBeVisible();
   await page.getByRole('searchbox', { name: '메일 검색' }).fill('');
   await row.click();
   await page.getByRole('button', { name: '휴지통으로 이동', exact: true }).click();

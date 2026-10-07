@@ -9,6 +9,7 @@ import type { Env } from '../worker/types';
 import { verificationCode } from '../shared/verification';
 import { sortMessage, sortPending } from '../worker/sorting';
 import { sortingDecision, sortingRequest } from '../worker/sorting-policy';
+import { verificationLink } from '../worker/verification';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 const testEnv = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) } } as Env;
@@ -21,7 +22,7 @@ async function request(path: string, method = 'GET', body?: unknown, auth = true
     method,
     headers: { 'Content-Type': 'application/json', 'X-Bluekite-Request': '1', Origin: origin,
       'CF-Connecting-IP': '192.0.2.1', ...(auth ? { Cookie: cookie } : {}), ...extra },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(path === '/api/login' ? { username: 'owner', ...(body as object) } : body),
   }), testEnv);
 }
 
@@ -178,6 +179,14 @@ describe('automatic sorting without mail loss', () => {
 });
 
 describe('private inbox', () => {
+  it('requires the configured username as well as the password without revealing which one failed', async () => {
+    const response = await request('/api/login', 'POST', { username: 'wrong-user', password }, false);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: '아이디 또는 비밀번호가 맞지 않습니다.' });
+    await bindings.DB.prepare("INSERT INTO settings (key,value) VALUES ('login_username','configured-owner')").run();
+    expect((await request('/api/login', 'POST', { username: 'owner', password }, false)).status).toBe(401);
+    expect((await request('/api/login', 'POST', { username: 'configured-owner', password }, false)).status).toBe(200);
+  });
   it('redirects production HTTP pages and API calls before credentials can be submitted', async () => {
     for (const path of ['/?address=pixiv%40bluekite.co.kr', '/api/login']) {
       const response = await worker.fetch(new Request('http://email.bluekite.co.kr' + path,
@@ -246,6 +255,23 @@ describe('verification shortcuts', () => {
     expect(verificationCode('Your verification code: 482913', 'Verification code: 482913')).toBe('482913');
     expect(verificationCode('482913 is your security code', '')).toBe('482913');
     expect(verificationCode('OTP', 'OTP\n12345678')).toBe('12345678');
+    expect(verificationCode('ログイン', '認証コードは 004829 です。')).toBe('004829');
+  });
+  it('extracts one explicit HTTPS verification link and rejects ambiguous or unsafe links', () => {
+    expect(verificationLink('', '', '<a href="https://accounts.example.net/verify?token=a&amp;b=2"><strong>이메일 확인</strong></a>'))
+      .toEqual({ url: 'https://accounts.example.net/verify?token=a&b=2', host: 'accounts.example.net', label: '이메일 확인' });
+    expect(verificationLink('Confirm your email', 'https://example.net/confirm?t=abc', '')?.url).toBe('https://example.net/confirm?t=abc');
+    for (const href of ['javascript:alert(1)', 'http://example.net/', 'https://user:pass@example.net/', '/verify']) {
+      expect(verificationLink('', '', `<a href="${href}">Verify your email</a>`)).toBeNull();
+    }
+    expect(verificationLink('', '', '<a href="https://one.example">이메일 확인</a><a href="https://two.example">Verify your email</a>')).toBeNull();
+    expect(verificationLink('Hello', 'https://example.net/', '<a href="https://example.net">Unsubscribe</a>')).toBeNull();
+  });
+  it('offers verification codes in the list without leaking full body text into summaries', async () => {
+    await receiveMail(incoming(simpleRaw), testEnv);
+    const response = await (await request('/api/inbox')).json() as any;
+    expect(response.messages[0].verification_code).toBe('482913');
+    expect(response.messages[0]).not.toHaveProperty('body_text');
   });
   it('does not promote order numbers, dates, link tokens or ambiguous codes', () => {
     for (const body of ['주문번호: 123456', '2026년 10월 7일', '인증번호: https://example.com/123456',

@@ -17,16 +17,20 @@ export interface MessageSummary {
   deleted_at: number | null;
   category: 'inbox' | 'promotions';
   category_source: 'pending' | 'automatic' | 'protected' | 'manual';
+  verification_code: string | null;
   attachments: AttachmentMeta[];
 }
 
 export interface MailMessage extends MessageSummary {
+  verification_link: VerificationLink | null;
   body_text: string;
   body_html: string;
   sent_at: string | null;
   raw_size: number;
   body_truncated: number;
 }
+
+export interface VerificationLink { url: string; host: string; label: string }
 
 export interface AddressInfo { address: string; count: number; unread: number }
 export interface InboxResult {

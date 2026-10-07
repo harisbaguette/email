@@ -19,7 +19,7 @@ export function EmailBody({ message }: { message: MailMessage }) {
       <button className="text-button" onClick={() => setPlain(v => !v)}><AlignLeft size={15} />{plain ? '원래 서식' : '텍스트로 보기'}</button>
       {!plain && !images && <button className="text-button" onClick={() => setImages(true)}><Image size={15} />외부 이미지 표시</button>}
     </div>}
-    {message.body_truncated === 1 && <p className="inline-notice">긴 메일의 일부만 표시합니다. 전체 내용은 원본 파일에서 확인할 수 있어요.</p>}
+    {message.body_truncated === 1 && <p className="inline-notice">긴 메일의 일부만 표시합니다. 전체 내용은 원본 파일에서 확인할 수 있습니다.</p>}
     {hasHtml && !plain
       ? <iframe key={String(images)} title="메일 본문" className="email-frame" src={`/api/messages/${message.id}/body${images ? '?images=1' : ''}`}
           sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" />

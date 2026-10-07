@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "npm run build && wrangler dev --port 8787",
     "dev:ui": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "brand:build": "node scripts/build-brand.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build-pwa.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "npm run db:local && npm run password:local && playwright test",
@@ -21,7 +22,9 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "domutils": "^4.0.2",
     "html-to-text": "^10.0.1",
+    "htmlparser2": "^12.0.0",
     "lucide-react": "^1.52.0",
     "postal-mime": "^4.0.4",
     "react": "^19.3.0",
@@ -43,6 +46,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/sanitize-html": "^2.16.2",
     "@vitejs/plugin-react": "^6.1.2",
+    "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^4.1.11",

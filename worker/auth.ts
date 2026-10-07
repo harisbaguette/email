@@ -76,8 +76,8 @@ export async function jsonBody(request: Request): Promise<Record<string, unknown
 }
 
 export function validatePassword(password: unknown): asserts password is string {
-  if (typeof password !== 'string' || password.length < 12 || encoder.encode(password).length > 72) {
-    throw new HttpError(400, '비밀번호는 12자 이상, 영문 기준 72자 이내로 입력해 주세요.');
+  if (typeof password !== 'string' || password.length < 8 || encoder.encode(password).length > 72) {
+    throw new HttpError(400, '비밀번호는 8자 이상, 영문 기준 72자 이내로 입력해 주세요.');
   }
 }
 
@@ -102,11 +102,14 @@ export async function limitLogin(request: Request, env: Env) {
 
 export async function login(request: Request, env: Env) {
   const key = await limitLogin(request, env);
-  const { password } = await jsonBody(request);
+  const { username, password } = await jsonBody(request);
+  if (typeof username !== 'string' || username.length < 1 || username.length > 64) throw new HttpError(400, '아이디를 입력해 주세요.');
   if (typeof password !== 'string' || password.length > 128) throw new HttpError(400, '비밀번호를 입력해 주세요.');
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'password_hash'").first<{ value: string }>();
   if (!row) throw new HttpError(503, '수신함의 첫 비밀번호가 아직 설정되지 않았습니다.');
-  if (!(await bcrypt.compare(password, row.value))) throw new HttpError(401, '비밀번호가 맞지 않습니다.');
+  const owner = await env.DB.prepare("SELECT value FROM settings WHERE key = 'login_username'").first<{ value: string }>();
+  const passwordMatches = await bcrypt.compare(password, row.value);
+  if (!passwordMatches || username.trim() !== (owner?.value || 'owner')) throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
   await env.DB.batch([
     env.DB.prepare('DELETE FROM login_attempts WHERE ip_hash = ? OR window_start < ?').bind(key, Date.now() - 86_400_000),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(Date.now()),
