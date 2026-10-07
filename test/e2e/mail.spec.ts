@@ -40,7 +40,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
     '--body-boundary', 'Content-Type: text/plain; charset=utf-8', '',
     'Bluekite 수신 확인. 인증번호는 482913입니다. https://example.com/verify',
     '--body-boundary', 'Content-Type: text/html; charset=utf-8', '',
-    '<h1>Bluekite 수신 확인</h1><p>인증번호는 <strong>482913</strong>입니다.</p><a href="https://example.com/verify">이메일 확인</a><img src="https://tracker.invalid/pixel.png"><script>window.parent.hacked=true</script><img src="x" onerror="window.parent.hacked=true"><a href="javascript:alert(1)">unsafe</a>',
+    '<style>.verification { background-color: #2458ce; color: #fff; padding: 10px; display: inline-block; }</style><h1>Bluekite 수신 확인</h1><p>인증번호는 <strong>482913</strong>입니다.</p><a class="verification" href="https://example.com/verify">이메일 확인</a><img src="https://tracker.invalid/pixel.png"><script>window.parent.hacked=true</script><img src="x" onerror="window.parent.hacked=true"><a href="javascript:alert(1)">unsafe</a>',
     '--body-boundary--', '--test-boundary', 'Content-Type: application/octet-stream',
     'Content-Disposition: attachment; filename="hello.txt"', 'Content-Transfer-Encoding: base64', '',
     Buffer.from('Hello, Bluekite!').toString('base64'), '--test-boundary--', '',
@@ -56,6 +56,8 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await expect(frame.getByText('482913', { exact: true })).toBeVisible();
   await expect(frame.locator('script')).toHaveCount(0);
   await expect(frame.getByRole('link', { name: '이메일 확인' })).toHaveAttribute('target', '_blank');
+  await expect(frame.getByRole('link', { name: '이메일 확인' })).toHaveCSS('background-color', 'rgb(36, 88, 206)');
+  await expect(frame.getByRole('link', { name: '이메일 확인' })).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(frame.locator('a[href^="javascript:"]')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { hacked?: boolean }).hacked)).toBeUndefined();
   expect(trackingRequests).toHaveLength(0);

@@ -11,7 +11,8 @@ function json(data: unknown, status = 200, headers?: HeadersInit) {
 
 function secured(response: Response): Response {
   const result = new Response(response.body, response);
-  result.headers.set('Cache-Control', 'no-store');
+  // Keep Cloudflare's email obfuscation and injected scripts out of private mail documents.
+  result.headers.set('Cache-Control', 'no-store, no-transform');
   result.headers.set('X-Content-Type-Options', 'nosniff');
   result.headers.set('Referrer-Policy', 'no-referrer');
   if (!result.headers.has('X-Frame-Options')) result.headers.set('X-Frame-Options', 'DENY');

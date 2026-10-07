@@ -107,7 +107,7 @@ describe('actual MIME and D1 storage', () => {
     expect(response.headers.get('Content-Security-Policy')).toContain("img-src data:;");
     expect(response.headers.get('Content-Security-Policy')).toContain('sandbox allow-popups');
     expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Cache-Control')).toBe('no-store, no-transform');
     const allowed = await request(`/api/messages/${id}/body?images=1`);
     expect(await allowed.text()).toContain('src="https://example.com/pixel"');
     expect(allowed.headers.get('Content-Security-Policy')).toContain('img-src data: https:;');

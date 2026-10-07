@@ -2,14 +2,18 @@ import sanitizeHtml from 'sanitize-html';
 
 export function emailDocument(html: string, allowImages: boolean) {
   const clean = sanitizeHtml(html, {
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'center', 'font'],
+    // Email templates use stylesheet classes for verification buttons. This document is
+    // isolated by iframe sandbox and CSP: no scripts, external stylesheets, forms or navigation of the parent.
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'center', 'font', 'style'],
+    allowVulnerableTags: true,
     allowedAttributes: {
       '*': ['style', 'class', 'dir', 'lang'],
       a: ['href', 'target', 'rel', 'title'],
       img: ['src', 'alt', 'width', 'height'],
-      table: ['width', 'cellpadding', 'cellspacing', 'border', 'align'],
-      td: ['width', 'height', 'colspan', 'rowspan', 'align', 'valign'],
-      th: ['width', 'colspan', 'rowspan', 'align'],
+      table: ['width', 'cellpadding', 'cellspacing', 'border', 'align', 'bgcolor'],
+      tr: ['bgcolor'],
+      td: ['width', 'height', 'colspan', 'rowspan', 'align', 'valign', 'bgcolor'],
+      th: ['width', 'colspan', 'rowspan', 'align', 'bgcolor'],
       font: ['color', 'size', 'face'],
     },
     allowedSchemes: ['https', 'http', 'mailto'],

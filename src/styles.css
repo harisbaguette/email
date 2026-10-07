@@ -40,7 +40,6 @@
   input::placeholder { color: #788297; }
   input:not([type='search']) { border: 1px solid #d3dbe8; border-radius: var(--radius); padding: 11px 13px; height: 46px; }
   label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 9px; }
-  .mobile-only { display: none; }
 }
 
 @layer components {
@@ -207,6 +206,7 @@
 }
 
 @layer responsive {
+  .mobile-only { display: none; }
   @media (min-width: 1600px) { .mail-list { width: 420px; } .sidebar { width: 262px; } }
   @media (max-width: 1190px) {
     .sidebar { width: 212px; padding-left: 10px; padding-right: 10px; }
