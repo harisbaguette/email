@@ -68,7 +68,6 @@
   .password-field input { width: 100%; padding-right: 47px; }
   .password-field button { position: absolute; right: 1px; top: 1px; }
   .login-submit { width: 100%; margin-top: 22px; justify-content: space-between; height: 48px; }
-  .login-footer { color: var(--muted); font-size: 14px; margin-top: 25px; }
   .mail-app { display: flex; height: 100dvh; overflow: hidden; }
   .sidebar { width: 244px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 26px 16px 13px; }
   .sidebar-brand { padding: 0 10px; height: 43px; margin-bottom: 26px; display: flex; align-items: center; justify-content: space-between; }
@@ -142,6 +141,11 @@
   .recipient-line button { display: flex; gap: 6px; align-items: center; padding: 8px 0; min-height: 44px; text-align: left; overflow-wrap: anywhere; color: #526a92; }
   .recipient-line button:hover { color: var(--blue); }
   .message-date { margin-left: 51px; font-size: 11px; color: var(--muted); }
+  .verification-code { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 24px; padding: 16px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--blue-pale); }
+  .verification-code > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .verification-code span { color: var(--text); font-size: 12px; }
+  .verification-code strong { font-size: 28px; font-weight: 650; letter-spacing: 3px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .verification-code button { flex-shrink: 0; }
   .attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
   .attachment { display: inline-flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; font-size: 12px; max-width: 100%; }
   .attachment:hover { background: var(--sidebar); }
@@ -183,9 +187,6 @@
   .address-field span { font-size: 13px; color: var(--muted); white-space: nowrap; padding-left: 7px; }
   .field-hint { font-size: 12px; line-height: 1.6; color: var(--muted); margin-top: 9px; }
   .form-error { color: var(--danger); font-size: 13px; line-height: 1.7; margin-top: 12px; }
-  .dialog-note { display: flex; align-items: flex-start; gap: 12px; color: #627392; background: #f5f8ff; border-radius: 8px; padding: 15px 12px; margin-top: 23px; }
-  .dialog-note svg { margin-top: 3px; }
-  .dialog-note p { font-size: 12px; line-height: 1.8; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 26px; }
   .copy-fallback { width: 100%; margin-top: 12px; font-size: 13px; }
   .settings-stats { font-size: 13px; padding-bottom: 23px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 17px; }
@@ -223,13 +224,15 @@
     .workspace-header { min-height: 73px; gap: 9px; padding: 12px 17px; }
     .workspace-heading h1 { font-size: 19px; }
     .search-field { width: min(340px, 48%); }
+    .header-create { white-space: nowrap; font-size: 13px; padding: 9px 12px; }
   }
   @media (max-width: 700px) {
     .workspace-header { min-height: 120px; flex-wrap: wrap; padding: 10px 14px 12px; column-gap: 7px; row-gap: 6px; }
     .workspace-header > .mobile-only { order: 0; }
-    .workspace-heading { order: 1; flex-basis: calc(100% - 110px); }
-    .refresh-button { order: 2; }
-    .search-field { order: 3; width: 100%; height: 40px; margin: 0 3px; }
+    .workspace-heading { order: 1; flex: 1; min-width: 0; }
+    .workspace-header > .header-create { order: 2; }
+    .refresh-button { order: 4; }
+    .search-field { order: 3; width: calc(100% - 57px); height: 40px; margin: 0 3px; }
     .search-field kbd { display: none; }
     .mail-list { width: 100%; border: 0; }
     .mail-row { padding: 21px 24px 18px; }
@@ -247,6 +250,7 @@
     .sender-meta strong { font-size: 15px; }
     .recipient-line { margin-left: 0; flex-wrap: wrap; gap: 3px 8px; }
     .message-date { margin: 3px 0 0; }
+    .verification-code { margin: 16px; padding: 14px 16px; }
     .plain-body { padding: 24px; }
     .body-options { padding: 3px 12px; gap: 2px; }
     .body-options .text-button { font-size: 12px; }

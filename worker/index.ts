@@ -17,6 +17,7 @@ function secured(response: Response): Response {
   result.headers.set('Referrer-Policy', 'no-referrer');
   if (!result.headers.has('X-Frame-Options')) result.headers.set('X-Frame-Options', 'DENY');
   result.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  result.headers.set('Strict-Transport-Security', 'max-age=31536000');
   return result;
 }
 
@@ -107,7 +108,11 @@ async function api(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (!new URL(request.url).pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    const url = new URL(request.url);
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
+      return Response.redirect(env.PUBLIC_ORIGIN + url.pathname + url.search, 308);
+    }
+    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     try { return secured(await api(request, env)); }
     catch (error) {
       if (error instanceof HttpError) return secured(json({ error: error.message }, error.status,

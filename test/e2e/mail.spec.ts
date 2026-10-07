@@ -17,6 +17,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByLabel('비밀번호', { exact: true }).fill(password);
   await page.getByRole('button', { name: '수신함 열기' }).click();
   await expect(page.getByRole('heading', { name: '전체 메일', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '메뉴 열기' })).toBeHidden();
 
   await page.getByRole('button', { name: '주소 만들기', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -52,6 +53,8 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await expect(row).toBeVisible();
   await row.click();
   await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '인증번호 복사' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('482913');
   const frame = page.frameLocator('iframe[title="메일 본문"]');
   await expect(frame.getByText('482913', { exact: true })).toBeVisible();
   await expect(frame.locator('script')).toHaveCount(0);
@@ -102,6 +105,17 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('button', { name: '취소', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: '수신함으로 복원' }).click();
+  await page.getByRole('main').getByRole('button', { name: '주소 만들기', exact: true }).click();
+  const generatedLocal = await page.getByLabel('주소 이름').inputValue();
+  expect(generatedLocal).toMatch(/^mail-[a-f0-9]{16}$/);
+  await expect(page.getByRole('button', { name: '만들고 복사' })).toBeFocused();
+  await page.screenshot({ path: '.local/address-mobile.png', animations: 'disabled' });
+  await page.getByRole('button', { name: '만들고 복사' }).click();
+  await expect(page.getByRole('heading', { name: generatedLocal, exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${generatedLocal}@bluekite.co.kr`);
+  await expect(page.getByText('인증 메일을 기다리고 있어요')).toBeVisible();
+  await page.screenshot({ path: '.local/waiting-mobile.png', animations: 'disabled' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByRole('button', { name: '메뉴 열기' }).click();
   await page.getByRole('button', { name: '설정', exact: true }).click();
   await expect(page.getByText('자동 삭제 없음')).toBeVisible();

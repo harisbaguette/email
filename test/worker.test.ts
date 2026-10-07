@@ -6,6 +6,7 @@ import worker from '../worker/index';
 import { receiveMail, getRaw, MAX_EMAIL_BYTES } from '../worker/mail';
 import { sha256 } from '../worker/auth';
 import type { Env } from '../worker/types';
+import { verificationCode } from '../shared/verification';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 const testEnv = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) } } as Env;
@@ -45,6 +46,18 @@ beforeEach(async () => {
 });
 
 describe('private inbox', () => {
+  it('redirects production HTTP pages and API calls before credentials can be submitted', async () => {
+    for (const path of ['/?address=pixiv%40bluekite.co.kr', '/api/login']) {
+      const response = await worker.fetch(new Request('http://email.bluekite.co.kr' + path,
+        path === '/api/login' ? { method: 'POST', body: '{"password":"test-only"}' } : undefined), testEnv);
+      expect(response.status).toBe(308);
+      expect(response.headers.get('Location')).toBe(origin + path);
+      expect(response.headers.has('Set-Cookie')).toBe(false);
+    }
+    const local = await worker.fetch(new Request('http://127.0.0.1:8787/api/session'), testEnv);
+    expect(local.status).toBe(200);
+    expect((await request('/api/session')).headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+  });
   it('requires a login for every mail, attachment, address and settings endpoint', async () => {
     for (const path of ['/api/inbox', '/api/settings', '/api/messages/00000000-0000-0000-0000-000000000000/body', '/api/messages/00000000-0000-0000-0000-000000000000/raw', '/api/messages/00000000-0000-0000-0000-000000000000/attachments/0']) {
       expect((await request(path, 'GET', undefined, false)).status).toBe(401);
@@ -92,6 +105,20 @@ describe('private inbox', () => {
     expect(await response.json()).toEqual({ address: 'pixiv+art@bluekite.co.kr', created: true });
     expect((await request('/api/addresses', 'POST', { local: 'pixiv+art' })).status).toBe(200);
     for (const local of ['bad@elsewhere.com', '.a', 'a..b', '한글', 'x'.repeat(65)]) expect((await request('/api/addresses', 'POST', { local })).status).toBe(400);
+  });
+});
+
+describe('verification shortcuts', () => {
+  it('recognizes explicitly labelled codes and preserves leading zeroes', () => {
+    expect(verificationCode('[서비스] 인증번호', '인증번호는 004829입니다. 10분 이내에 입력해 주세요.')).toBe('004829');
+    expect(verificationCode('Your verification code: 482913', 'Verification code: 482913')).toBe('482913');
+    expect(verificationCode('482913 is your security code', '')).toBe('482913');
+    expect(verificationCode('OTP', 'OTP\n12345678')).toBe('12345678');
+  });
+  it('does not promote order numbers, dates, link tokens or ambiguous codes', () => {
+    for (const body of ['주문번호: 123456', '2026년 10월 7일', '인증번호: https://example.com/123456',
+      '인증번호: 123456789', 'Verification code: 1234AB', 'Verification code: 2026-10-07',
+      '인증번호: 123456\n보안 코드: 654321']) expect(verificationCode('', body)).toBeNull();
   });
 });
 

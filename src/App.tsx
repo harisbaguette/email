@@ -4,6 +4,7 @@ import type { Folder, InboxResult, MailMessage, MessageSummary } from '../shared
 import { api, copyText, errorMessage } from './api';
 import { AddressDialog, Brand, EmptyState, formatBytes, Login, Modal, SettingsDialog, Toast } from './components';
 import { EmailBody } from './EmailBody';
+import { verificationCode } from '../shared/verification';
 
 const emptyInbox: InboxResult = { messages: [], addresses: [], counts: { inbox: 0, unread: 0, trash: 0 }, nextCursor: null };
 const folderLabels: Record<Folder, string> = { inbox: '전체 메일', unread: '안 읽은 메일', trash: '휴지통' };
@@ -132,10 +133,10 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   useEffect(() => { setLoading(true); void refresh(); }, [refresh]);
   useEffect(() => {
     const poll = () => { if (!document.hidden && navigator.onLine && !loadedMore) void refresh(true); };
-    const timer = setInterval(poll, 20000);
+    const timer = setInterval(poll, address && folder === 'inbox' ? 10000 : 20000);
     document.addEventListener('visibilitychange', poll); window.addEventListener('online', poll);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); window.removeEventListener('online', poll); };
-  }, [refresh, loadedMore]);
+  }, [refresh, loadedMore, address, folder]);
 
   useEffect(() => {
     setMessage(null); setMessageError('');
@@ -199,6 +200,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }
 
   const visibleAddresses = data.addresses.filter(a => a.address.includes(addressSearch.toLowerCase()));
+  const code = message ? verificationCode(message.subject, message.body_text) : null;
   return <div className={`mail-app ${selected ? 'detail-open' : ''}`}>
     {sidebarOpen && <button className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-label="메뉴 닫기" />}
     <aside ref={sidebarRef} className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
@@ -228,6 +230,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     <main className="workspace" inert={sidebarOpen}>
       <header className="workspace-header"><button className="icon-button mobile-only" onClick={() => setSidebarOpen(true)} aria-label="메뉴 열기"><Menu size={21} /></button>
         <div className="workspace-heading"><h1>{address ? address.split('@')[0] : folderLabels[folder]}</h1>{address && <button className="icon-button heading-copy" aria-label="현재 주소 복사" onClick={() => void copy(address)}><Copy size={17} /></button>}</div>
+        <button className="primary-button mobile-only header-create" onClick={() => setDialog('address')} aria-label="주소 만들기"><Plus size={17} />새 주소</button>
         <div className="search-field"><Search size={18} /><input ref={searchRef} type="search" placeholder="메일 검색" aria-label="메일 검색" value={search} onChange={e => setSearch(e.target.value)} /><kbd>⌘ K</kbd></div>
         <button className={`icon-button refresh-button ${refreshing ? 'spinning' : ''}`} onClick={() => void refresh()} aria-label="새로고침" title="새로고침" disabled={refreshing}><RefreshCw size={19} /></button>
       </header>
@@ -238,7 +241,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
           <div className="list-scroll" aria-busy={loading}>
             {loading ? <div className="list-loading" role="status">메일을 불러오는 중…</div>
               : data.messages.length ? data.messages.map(item => <MailRow key={item.id} item={item} selected={item.id === selected} onClick={() => navigate({ selected: item.id }, true)} />)
-                : !listError && <EmptyState filtered={folder !== 'inbox' || Boolean(address)} query={query} onAdd={() => setDialog('address')} />}
+                : !listError && <EmptyState filtered={folder !== 'inbox' || Boolean(address)} waiting={folder === 'inbox' && Boolean(address)} query={query} onAdd={() => setDialog('address')} />}
             {!loading && data.nextCursor && <button className="load-more" onClick={() => void more()} disabled={refreshing}>{refreshing ? '불러오는 중…' : '이전 메일 더 보기'}</button>}
           </div>
         </section>
@@ -259,7 +262,9 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
                   <div className="recipient-line"><span>받는 사람</span><button onClick={() => void copy(message.recipient)} title="주소 복사">{message.recipient}<Copy size={13} /></button></div>
                   <div className="message-date">{fullDateFormat.format(message.received_at)}</div>
                   {message.attachments.length > 0 && <div className="attachments">{message.attachments.map(file => <a key={file.index} href={`/api/messages/${message.id}/attachments/${file.index}`} download className="attachment"><Paperclip size={16} /><span>{file.filename}<small>{formatBytes(file.size)}</small></span><Download size={15} /></a>)}</div>}
-                </div><EmailBody key={message.id} message={message} /></>}
+                </div>{code && <div className="verification-code"><div><span>인증번호</span><strong>{code}</strong></div><button className="secondary-button" aria-label="인증번호 복사"
+                  onClick={() => { void copyText(code).then(() => notify('인증번호를 복사했어요.')).catch(() => notify('복사하지 못했어요. 번호를 직접 선택해 주세요.')); }}><Copy size={16} />복사</button></div>}
+                  <EmailBody key={message.id} message={message} /></>}
           </> : <div className="reading-placeholder"><div className="placeholder-mark"><MailOpen size={38} strokeWidth={1.3} /></div><h2>메일을 선택하세요</h2><p>모든 주소의 메일을 한곳에서.</p><div className="placeholder-domain">@{domain}</div></div>}
         </section>
       </div>

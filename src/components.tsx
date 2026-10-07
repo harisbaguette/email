@@ -33,13 +33,17 @@ export function Login({ onLogin, initialError }: { onLogin: () => void; initialE
         <button className="primary-button login-submit" disabled={busy}>{busy ? '확인 중…' : '수신함 열기'}<ArrowRight size={18} /></button>
       </form>
     </section>
-    <p className="login-footer">나만의 주소, 하나의 수신함.</p>
   </main>;
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const dialog = ref.current!; dialog.showModal(); return () => dialog.close(); }, []);
+  useEffect(() => {
+    const dialog = ref.current!;
+    dialog.showModal();
+    dialog.querySelector<HTMLElement>('[data-dialog-autofocus]')?.focus();
+    return () => dialog.close();
+  }, []);
   return <dialog ref={ref} className="modal" aria-label={title} onCancel={e => { e.preventDefault(); onClose(); }}
     onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="modal-inner"><header className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="닫기"><X size={20} /></button></header>{children}</div>
@@ -47,7 +51,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 }
 
 export function AddressDialog({ domain, onClose, onCreated }: { domain: string; onClose: () => void; onCreated: (address: string) => void }) {
-  const [local, setLocal] = useState('');
+  const [local, setLocal] = useState(() => `mail-${Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, '0')).join('')}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState('');
@@ -64,13 +68,12 @@ export function AddressDialog({ domain, onClose, onCreated }: { domain: string; 
   return <Modal title="새 이메일 주소" onClose={onClose}>
     <form onSubmit={submit}>
       <label htmlFor="local-part">주소 이름</label>
-      <div className="address-field"><input id="local-part" placeholder="pixiv" value={local} autoFocus autoComplete="off" autoCapitalize="none" spellCheck={false}
-        maxLength={64} required onChange={e => setLocal(e.target.value.toLowerCase())} /><span>@{domain}</span></div>
-      <p className="field-hint">영문, 숫자, ., _, +, -를 사용할 수 있어요.</p>
+      <div className="address-field"><input id="local-part" placeholder="예: pixiv" value={local} autoComplete="off" autoCapitalize="none" spellCheck={false}
+        maxLength={64} required onFocus={e => e.target.select()} onChange={e => setLocal(e.target.value.toLowerCase())} aria-describedby="address-hint" /><span>@{domain}</span></div>
+      <p className="field-hint" id="address-hint">그대로 만들거나 원하는 이름으로 바꾸세요.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
       {created && error && <input className="copy-fallback" aria-label="만든 이메일 주소" readOnly value={created} onFocus={e => e.target.select()} />}
-      <div className="dialog-note"><Mail size={19} /><p>새 주소로 오는 메일도 이 수신함에서 받습니다.<br />주소는 미리 만들지 않아도 수신돼요.</p></div>
-      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>취소</button><button className="primary-button" disabled={busy || !local.trim()}><Copy size={17} />{busy ? '만드는 중…' : '만들고 복사'}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>취소</button><button className="primary-button" data-dialog-autofocus disabled={busy || !local.trim()}><Copy size={17} />{busy ? '만드는 중…' : '만들고 복사'}</button></div>
     </form>
   </Modal>;
 }
@@ -106,10 +109,10 @@ export function SettingsDialog({ domain, onClose, notify }: { domain: string; on
   </Modal>;
 }
 
-export function EmptyState({ filtered, query, onAdd }: { filtered: boolean; query: string; onAdd?: () => void }) {
+export function EmptyState({ filtered, query, waiting, onAdd }: { filtered: boolean; query: string; waiting?: boolean; onAdd?: () => void }) {
   return <div className="empty-state"><div className="empty-icon"><Mail size={30} strokeWidth={1.4} /></div>
-    <h3>{query ? '검색 결과가 없어요' : filtered ? '메일이 없어요' : '첫 메일을 기다리고 있어요'}</h3>
-    <p>{query ? '다른 검색어나 이메일 주소로 찾아보세요.' : filtered ? '이곳에 표시할 메일이 아직 없습니다.' : '내 주소로 가입하고, 인증 메일을 여기서 확인하세요.'}</p>
+    <h3>{query ? '검색 결과가 없어요' : waiting ? '인증 메일을 기다리고 있어요' : filtered ? '메일이 없어요' : '첫 메일을 기다리고 있어요'}</h3>
+    <p>{query ? '다른 검색어나 이메일 주소로 찾아보세요.' : waiting ? '복사한 주소를 가입할 곳에 붙여 넣으세요. 메일이 도착하면 자동으로 표시됩니다.' : filtered ? '이곳에 표시할 메일이 아직 없습니다.' : '내 주소로 가입하고, 인증 메일을 여기서 확인하세요.'}</p>
     {!query && !filtered && onAdd && <button className="secondary-button" onClick={onAdd}><Plus size={17} />주소 만들기</button>}
   </div>;
 }

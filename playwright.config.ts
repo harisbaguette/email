@@ -6,6 +6,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   use: {
+    actionTimeout: 10000,
     baseURL: 'http://127.0.0.1:8787',
     viewport: { width: 1440, height: 960 },
     permissions: ['clipboard-read', 'clipboard-write'],
