@@ -49,13 +49,17 @@ export function assertSameOrigin(request: Request, env: Env) {
   }
 }
 
-export async function jsonBody(request: Request): Promise<Record<string, unknown>> {
-  if (!request.headers.get('Content-Type')?.startsWith('application/json')) {
+export async function jsonBody(request: Request, allowEmpty = false): Promise<Record<string, unknown>> {
+  const isJson = request.headers.get('Content-Type')?.startsWith('application/json');
+  if (!allowEmpty && !isJson) {
     throw new HttpError(415, '지원하지 않는 요청 형식입니다.');
   }
   if (Number(request.headers.get('Content-Length')) > 4096) throw new HttpError(413, '입력 내용이 너무 깁니다.');
   const reader = request.body?.getReader();
-  if (!reader) throw new HttpError(400, '입력 내용을 확인해 주세요.');
+  if (!reader) {
+    if (allowEmpty) return {};
+    throw new HttpError(400, '입력 내용을 확인해 주세요.');
+  }
   const chunks: Uint8Array[] = [];
   let length = 0;
   while (true) {
@@ -65,6 +69,8 @@ export async function jsonBody(request: Request): Promise<Record<string, unknown
     if (length > 4096) { await reader.cancel(); throw new HttpError(413, '입력 내용이 너무 깁니다.'); }
     chunks.push(value);
   }
+  if (!length && allowEmpty) return {};
+  if (!isJson) throw new HttpError(415, '지원하지 않는 요청 형식입니다.');
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }

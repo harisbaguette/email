@@ -30,15 +30,23 @@ export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [domain, setDomain] = useState('bluekite.co.kr');
   const [sessionError, setSessionError] = useState('');
+  const [sessionAttempt, setSessionAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    setSessionError('');
     api<{ authenticated: boolean; domain: string }>('/api/session', { signal: controller.signal })
       .then(result => { if (!controller.signal.aborted) { setAuthenticated(result.authenticated); setDomain(result.domain); } })
-      .catch(error => { if (!controller.signal.aborted) { setSessionError(errorMessage(error)); setAuthenticated(false); } });
+      .catch(error => { if (!controller.signal.aborted) { setSessionError(errorMessage(error)); } });
     const expired = () => { setAuthenticated(false); setSessionError('로그인이 만료됐습니다. 다시 로그인해야 합니다.'); };
     window.addEventListener('session-expired', expired);
     return () => { controller.abort(); window.removeEventListener('session-expired', expired); };
-  }, []);
+  }, [sessionAttempt]);
+  useEffect(() => {
+    const retry = () => { if (authenticated === null && sessionError) setSessionAttempt(value => value + 1); };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [authenticated, sessionError]);
+  if (authenticated === null && sessionError) return <main className="session-recovery"><Brand /><h1>연결할 수 없습니다</h1><p role="alert">{sessionError}</p><button className="primary-button" onClick={() => setSessionAttempt(value => value + 1)}>다시 시도</button></main>;
   if (authenticated === null) return <div className="initial-loading"><Brand /><span className="loading-dot" /></div>;
   if (!authenticated) return <Login initialError={sessionError} onLogin={() => { setAuthenticated(true); setSessionError(''); }} />;
   return <Mailbox domain={domain} onLogout={() => setAuthenticated(false)} />;
@@ -47,6 +55,8 @@ export function App() {
 function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void }) {
   const [view, setView] = useState(initialLocation);
   const { folder, address, query, selected, settings } = view;
+  const currentView = useRef(view);
+  currentView.current = view;
   const [search, setSearch] = useState(query);
   const [data, setData] = useState<InboxResult>(emptyInbox);
   const [loading, setLoading] = useState(true);
@@ -64,6 +74,8 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   const requestVersion = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listScroll = useRef(0);
+  const settingsScroll = useRef(0);
+  const previousSettings = useRef(settings);
   const lastOpened = useRef<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -94,7 +106,8 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }, []);
 
   function navigate(changes: Partial<typeof view>, push = false) {
-    const next = { ...view, ...changes };
+    const next = { ...currentView.current, ...changes };
+    currentView.current = next;
     const params = new URLSearchParams();
     if (next.folder !== 'inbox') params.set('folder', next.folder);
     if (next.address) params.set('address', next.address);
@@ -108,7 +121,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }
 
   useEffect(() => {
-    const pop = () => { const next = initialLocation(); if (next.selected) listScroll.current = window.scrollY; setView(next); setSearch(next.query); };
+    const pop = () => { const next = initialLocation(); if (next.selected && !selected && !settings) listScroll.current = window.scrollY; currentView.current = next; setView(next); setSearch(next.query); };
     const key = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -121,12 +134,14 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }, [view]);
 
   useEffect(() => {
-    if (search === query) return;
+    if (search === query || selected || settings) return;
     const timer = setTimeout(() => navigate({ query: search, selected: null }), 300);
     return () => clearTimeout(timer);
-  }, [search, query, folder, address]);
+  }, [search, query, folder, address, selected, settings]);
 
   const refresh = useCallback(async (quiet = false) => {
+    const active = currentView.current;
+    if (active.folder !== folder || active.address !== address || active.query !== query) return;
     const version = ++requestVersion.current;
     if (!quiet) setRefreshing(true);
     try {
@@ -141,7 +156,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     }
   }, [folder, address, query]);
 
-  useEffect(() => { setLoading(true); void refresh(); }, [refresh]);
+  useEffect(() => { setLoading(true); setData(previous => ({ ...previous, messages: [], nextCursor: null })); void refresh(); }, [refresh]);
   useEffect(() => {
     const poll = () => { if (!document.hidden && navigator.onLine && !loadedMore) void refresh(true); };
     const timer = setInterval(poll, 10000);
@@ -156,7 +171,11 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }, [refresh]);
   useLayoutEffect(() => {
     if (settings) { window.scrollTo(0, 0); document.querySelector<HTMLElement>('.settings-title h1')?.focus({ preventScroll: true }); }
-    else if (!selected) window.scrollTo(0, listScroll.current);
+    else if (previousSettings.current) {
+      window.scrollTo(0, settingsScroll.current);
+      document.querySelector<HTMLElement>('.settings-entry')?.focus({ preventScroll: true });
+    }
+    previousSettings.current = settings;
   }, [settings]);
 
   useEffect(() => {
@@ -210,6 +229,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     const id = message.id; setMessageBusy(true);
     try {
       await api(`/api/messages/${id}`, { method: action === 'delete' ? 'DELETE' : 'PATCH', body: action === 'delete' ? undefined : JSON.stringify({ action }) });
+      if (currentView.current.selected !== id) { await refresh(true); return; }
       if (action === 'inbox' || action === 'promotions') {
         navigate({ selected: null });
         notify(action === 'inbox' ? '받은 메일로 옮겼습니다.' : '광고와 소식으로 옮겼습니다.');
@@ -231,7 +251,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
   }
   return <div className="mail-app">
     <header className="app-header"><button className="brand-home" onClick={() => chooseFolder('inbox')} aria-label="받은 메일로 이동"><Brand /></button>
-      <div className="app-actions"><button className={`text-button settings-entry ${settings ? 'is-active' : ''}`} onClick={() => { if (!settings) { listScroll.current = window.scrollY; navigate({ settings: 'addresses' }, true); } }} aria-label="설정"><Settings size={18} />설정</button></div>
+      <div className="app-actions">{!settings && <button className="text-button settings-entry" onClick={() => { settingsScroll.current = window.scrollY; navigate({ settings: 'addresses' }, true); }} aria-label="설정"><Settings size={18} />설정</button>}</div>
     </header>
     {settings && <SettingsPage loading={loading} error={listError} onRetry={() => void refresh()} domain={domain} addresses={data.addresses} tab={settings} createInitially={new URLSearchParams(location.search).has('new-address')} onTab={tab => navigate({ settings: tab })} onClose={() => { if (history.state?.settingsPage) history.back(); else navigate({ settings: null }); }} onCreated={() => void refresh(true)} onSelect={value => chooseFolder('all', value)} onLogout={() => { void logout().then(onLogout).catch(error => notify(errorMessage(error))); }} />}
     <main hidden={Boolean(settings)} className={`workspace ${selected ? 'detail-open' : ''}`}>

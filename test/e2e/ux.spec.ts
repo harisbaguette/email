@@ -66,6 +66,9 @@ test('address creation recovery, address copy and filter, clipboard fallback, an
   await target.click();
   await expect(page.getByRole('button', { name: '메일 목록으로' })).toBeFocused();
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await page.getByRole('button', { name: '설정', exact: true }).click();
+  await page.getByRole('button', { name: '수신함', exact: true }).click();
+  await expect(page.getByRole('button', { name: '설정', exact: true })).toBeFocused();
   await page.goBack();
   await expect(target).toBeFocused();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(position);

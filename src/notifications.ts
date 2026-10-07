@@ -11,11 +11,21 @@ export async function subscriptionId(subscription: PushSubscription) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(subscription.endpoint)))].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 function applicationKey(raw: string) { return Uint8Array.from(atob(raw.replace(/-/g, '+').replace(/_/g, '/')), character => character.charCodeAt(0)); }
+export async function pushRegistration(): Promise<ServiceWorkerRegistration> {
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (registration?.active) return registration;
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([navigator.serviceWorker.ready, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('알림을 준비하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.')), 8000);
+    })]);
+  } finally { clearTimeout(timer!); }
+}
 export async function enablePush(publicKey: string, mode: PushMode, preview: boolean) {
   // Request permission directly from the click, before awaiting network or the worker.
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') throw new Error(permission === 'denied' ? '브라우저에서 알림이 차단되었습니다. 사이트 설정에서 허용해 주세요.' : '알림 허용을 선택하면 연결할 수 있습니다.');
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await pushRegistration();
   let subscription = await registration.pushManager.getSubscription();
   const created = !subscription;
   if (!subscription) {
@@ -32,12 +42,17 @@ export async function enablePush(publicKey: string, mode: PushMode, preview: boo
 }
 export async function disablePush(id: string) {
   await api(`/api/push/${id}`, { method: 'DELETE' });
+  await clearBrowserPush();
+}
+export async function clearBrowserPush() {
   rememberPush('');
-  const registration = await navigator.serviceWorker.getRegistration();
-  await (await registration?.pushManager.getSubscription())?.unsubscribe().catch(() => {});
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    await (await registration?.pushManager.getSubscription())?.unsubscribe();
+    for (const notification of await registration?.getNotifications() || []) notification.close();
+  } catch { /* The server has already revoked this connection. */ }
 }
 export async function logout() {
   await api('/api/logout', { method: 'POST', body: JSON.stringify({ pushId: pushId() }) });
-  rememberPush('');
-  try { const registration = await navigator.serviceWorker.getRegistration(); await (await registration?.pushManager.getSubscription())?.unsubscribe(); } catch {}
+  await clearBrowserPush();
 }

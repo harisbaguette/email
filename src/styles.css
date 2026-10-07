@@ -28,6 +28,9 @@
   .brand-home { padding: 0; display: flex; border-radius: 5px; }
   .initial-loading { min-height: 100dvh; display: flex; align-items: center; justify-content: center; gap: 20px; }
   .loading-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); animation: pulse .8s alternate infinite; }
+  .session-recovery { max-width: 380px; margin: 20dvh auto; padding: 0 24px; }
+  .session-recovery h1 { font-size: 21px; font-weight: 600; margin-top: 34px; }
+  .session-recovery p { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 16px 0 24px; }
   .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: var(--radius); color: var(--muted); text-decoration: none; }
   .icon-button:hover, .text-button:hover { background: var(--surface); color: var(--text); }
   .primary-button, .secondary-button, .danger-button, .text-button { min-height: 42px; display: inline-flex; justify-content: center; align-items: center; gap: 7px; border-radius: var(--radius); padding: 10px 15px; font-size: 14px; font-weight: 500; text-decoration: none; transition: background .12s; }
@@ -171,10 +174,9 @@
   .address-create .address-field { background: white; }
   .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   .managed-address { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); }
-  .managed-copy { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; text-align: left; padding: 16px 0; min-height: 76px; }
-  .managed-copy > span:nth-child(2) { font-weight: 560; font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
-  .managed-copy small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 5px; }
-  .address-monogram { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; background: #f3f5f9; color: #6e7d99; font-size: 18px; font-weight: 450; }
+  .managed-copy { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; text-align: left; padding: 13px 0; min-height: 56px; }
+  .address-value { font-weight: 550; font-size: 14px; overflow-wrap: anywhere; min-width: 0; line-height: 1.6; }
+  .address-value > span { color: var(--muted); font-weight: 400; }
   .copy-affordance { color: #7e8794; margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 12px; flex-shrink: 0; }
   .managed-copy:hover .copy-affordance, .is-copied .copy-affordance { color: var(--blue); }
   .settings-addresses { margin-top: 8px; }
@@ -203,12 +205,9 @@
   .settings-feedback { color: #286346; font-size: 13px; line-height: 1.7; margin-top: 16px; }
   .settings-error { color: var(--danger); font-size: 13px; line-height: 1.7; margin-top: 16px; }
   .settings-bottom { display: flex; justify-content: flex-start; margin: 20px -10px 0; }
-  .account-identity { display: flex; align-items: center; gap: 14px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
-  .account-avatar { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #f1f4f9; color: #6d7b93; }
-  .account-identity > div { flex: 1; }
-  .account-identity strong { display: block; font-size: 16px; font-weight: 600; }
-  .account-identity > div > span { display: block; color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .account-identity > svg { color: #74867f; }
+  .account-identity { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 0 24px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .account-identity > span { color: var(--muted); }
+  .account-identity strong { font-weight: 550; }
   .account-form { padding: 28px 0; border-bottom: 1px solid var(--line); }
   .account-form h3 { font-size: 15px; font-weight: 600; margin-bottom: 22px; }
   .password-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 16px; }
@@ -256,8 +255,7 @@
     .address-field input { padding-left: 10px; font-size: 14px; }
     .managed-address { gap: 2px; }
     .managed-copy { gap: 10px; }
-    .address-monogram { width: 30px; height: 34px; font-size: 16px; border-radius: 8px; }
-    .managed-copy > span:nth-child(2) { font-size: 14px; }
+    .address-value { font-size: 13px; }
     .managed-address .icon-button { width: 36px; }
     .copy-affordance { gap: 3px; font-size: 11px; }
     .notification-state { flex-wrap: wrap; padding: 18px 16px; gap: 12px; }
@@ -310,6 +308,10 @@
     .modal-inner { padding: 22px; }
     .login-card { padding-bottom: 0; }
     .list-loading, .empty-state { padding-top: 90px; }
+  }
+  @media (max-width: 600px) {
+    input, .address-field input, .search-field input { font-size: 16px; }
+    .preference-row select { font-size: 16px; max-width: 156px; min-width: 0; padding: 10px 6px; }
   }
   @media (max-width: 350px) { .workspace { padding-left: 16px; padding-right: 16px; } .app-header { padding-left: 14px; padding-right: 14px; } .brand { font-size: 18px; } .brand-symbol { width: 25px; } .app-actions .text-button { padding: 8px; } .list-tools .search-field input { width: 65px; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

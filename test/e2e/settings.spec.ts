@@ -13,10 +13,10 @@ test('settings on desktop and mobile; simulated subscription, push display and n
     p256dh: Buffer.concat([Buffer.from([4]), Buffer.from(pair.x!, 'base64url'), Buffer.from(pair.y!, 'base64url')]).toString('base64url'), auth: Buffer.from(randomBytes(16)).toString('base64url'),
   } };
   await page.addInitScript(value => {
-    let enabled = false;
-    const fake = { ...value, toJSON: () => value, unsubscribe: async () => { enabled = false; return true; } };
+    let enabled = sessionStorage.getItem('test-push-enabled') === '1';
+    const fake = { ...value, toJSON: () => value, unsubscribe: async () => { enabled = false; sessionStorage.removeItem('test-push-enabled'); return true; } };
     PushManager.prototype.getSubscription = async () => enabled ? fake as unknown as PushSubscription : null;
-    PushManager.prototype.subscribe = async () => { enabled = true; return fake as unknown as PushSubscription; };
+    PushManager.prototype.subscribe = async () => { enabled = true; sessionStorage.setItem('test-push-enabled', '1'); return fake as unknown as PushSubscription; };
   }, subscription);
   await page.goto('/');
   await page.getByLabel('아이디', { exact: true }).fill(username);
@@ -51,16 +51,23 @@ test('settings on desktop and mobile; simulated subscription, push display and n
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   const sw = context.serviceWorkers()[0];
   // Simulate the browser's decrypted push delivery, not a real mobile push service.
-  await sw.evaluate(() => self.dispatchEvent(new (self as any).PushEvent('push', { data: JSON.stringify({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: '/?settings=notifications', tag: 'e2e-push' }) })));
+  await sw.evaluate(async () => {
+    const event = new (self as any).PushEvent('push', { data: JSON.stringify({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: '/?settings=notifications', tag: 'e2e-push' }) });
+    const work: Promise<unknown>[] = [];
+    event.waitUntil = (promise: Promise<unknown>) => work.push(promise);
+    self.dispatchEvent(event);
+    await Promise.all(work);
+  });
   await expect.poll(() => sw.evaluate(async () => (await (self as any).registration.getNotifications({ tag: 'e2e-push' })).length)).toBe(1);
   const displayed = await sw.evaluate(async () => { const item = (await (self as any).registration.getNotifications({ tag: 'e2e-push' }))[0]; return { title: item.title, body: item.body, url: item.data.url }; });
   expect(displayed).toEqual({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: '/?settings=notifications' });
-  await page.getByRole('button', { name: '끄기', exact: true }).click();
-  await expect(page.getByRole('button', { name: '켜기', exact: true })).toBeVisible();
-  expect((await (await context.request.get('/api/push')).json()).devices).toEqual([]);
+  await page.getByRole('button', { name: '계정', exact: true }).click();
   await sw.evaluate(async () => { const item = (await (self as any).registration.getNotifications({ tag: 'e2e-push' }))[0]; self.dispatchEvent(new (self as any).NotificationEvent('notificationclick', { notification: item })); });
   await expect(page).toHaveURL(/settings=notifications/);
   await expect(page.getByRole('heading', { name: '알림', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '끄기', exact: true }).click();
+  await expect(page.getByRole('button', { name: '켜기', exact: true })).toBeVisible();
+  expect((await (await context.request.get('/api/push')).json()).devices).toEqual([]);
   await page.evaluate(() => { PushManager.prototype.subscribe = async () => { throw new DOMException('Registration failed', 'NotAllowedError'); }; });
   await page.getByRole('button', { name: '켜기', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('시크릿 창이라면 일반 창');

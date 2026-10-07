@@ -137,7 +137,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('button', { name: '새 주소', exact: true }).click();
   const generatedLocal = await page.getByLabel('주소 이름').inputValue();
   fixtures.push(generatedLocal);
-  expect(generatedLocal).toMatch(/^m[a-f0-9]{8}$/);
+  expect(generatedLocal).toMatch(/^[bdfghjkmnprstvz][aeou][bdfghjkmnprstvz][aeou][2-9]{2}$/);
   await expect(page.getByLabel('주소 이름')).toBeFocused();
   await page.screenshot({ path: '.local/address-mobile.png', animations: 'disabled' });
   await page.getByRole('button', { name: '만들고 복사' }).click();

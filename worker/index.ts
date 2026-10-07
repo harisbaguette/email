@@ -42,7 +42,7 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === '/api/session' && method === 'GET') return json({ authenticated: Boolean(session), domain: env.MAIL_DOMAIN });
   if (!session) throw new HttpError(401, '다시 로그인해 주세요.');
   if (path === '/api/logout' && method === 'POST') {
-    const body = request.body ? await jsonBody(request) : {};
+    const body = await jsonBody(request, true);
     const pushId = typeof body.pushId === 'string' && /^[a-f0-9]{64}$/.test(body.pushId) ? body.pushId : '';
     await env.DB.batch([
       env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash = ? OR id = ?').bind(session, pushId),
