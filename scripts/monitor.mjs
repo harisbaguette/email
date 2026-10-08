@@ -6,12 +6,27 @@ async function get(url, options = {}) {
 }
 async function certificateDays() {
   return new Promise((resolve, reject) => {
-    const socket = tls.connect({ host: 'email.bluekite.co.kr', port: 443, servername: 'email.bluekite.co.kr', rejectUnauthorized: true }, () => {
+    const socket = tls.connect({ host: 'email.bluekite.co.kr', port: 443, servername: 'email.bluekite.co.kr', minVersion: 'TLSv1.2', maxVersion: 'TLSv1.2', rejectUnauthorized: true }, () => {
       const days = (Date.parse(socket.getPeerCertificate().valid_to) - Date.now()) / 86_400_000;
       socket.end(); resolve(days);
     });
     socket.setTimeout(15_000, () => socket.destroy(new Error('TLS timeout')));
     socket.on('error', reject);
+  });
+}
+export async function requireProtocolRejection(version, options = {}) {
+  return new Promise((resolve, reject) => {
+    // Probe the handshake only: never send cookies, tokens or application data.
+    const socket = tls.connect({ host: 'email.bluekite.co.kr', port: 443, servername: 'email.bluekite.co.kr',
+      ...options, minVersion: version, maxVersion: version, ciphers: 'DEFAULT@SECLEVEL=0', rejectUnauthorized: true }, () => {
+      socket.destroy(); reject(new Error('구형 TLS 연결이 허용되었습니다.'));
+    });
+    socket.setTimeout(15_000, () => socket.destroy(new Error('TLS timeout')));
+    socket.on('error', error => {
+      // A local cipher error, timeout or failed certificate check does not prove edge rejection.
+      if (error.code === 'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION') resolve();
+      else reject(error);
+    });
   });
 }
 export function checkStatus(status) {
@@ -33,6 +48,7 @@ async function main() {
   await redirect.body?.cancel();
   const days = await certificateDays();
   if (!Number.isFinite(days) || days < 14) throw new Error('TLS 인증서 갱신 확인 필요');
+  await Promise.all(['TLSv1', 'TLSv1.1'].map(version => requireProtocolRejection(version)));
   const health = await get(`${origin}/api/health`);
   if (!health.ok || (await health.json()).ok !== true) throw new Error('앱 연결 실패');
   const status = await get(`${origin}/api/monitor`, { headers: { Authorization: `Bearer ${token}` } });
