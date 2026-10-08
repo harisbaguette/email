@@ -66,6 +66,10 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: /이메일 확인 링크 열기/ })).toHaveAttribute('href', 'https://example.com/verify');
   await expect(page.getByRole('link', { name: /이메일 확인 링크 열기/ })).toHaveAttribute('rel', 'noopener noreferrer');
+  await page.getByRole('link', { name: /이메일 확인 링크 열기/ }).click();
+  await expect(page.getByRole('dialog', { name: '링크 주소 확인' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('example.com', { exact: true })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: '취소', exact: true }).click();
   await page.getByRole('button', { name: '인증번호 복사', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('482913');
   const frame = page.frameLocator('iframe[title="메일 본문"]');

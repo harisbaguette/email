@@ -316,3 +316,93 @@
   @media (max-width: 350px) { .workspace { padding-left: 16px; padding-right: 16px; } .app-header { padding-left: 14px; padding-right: 14px; } .brand { font-size: 18px; } .brand-symbol { width: 25px; } .app-actions .text-button { padding: 8px; } .list-tools .search-field input { width: 65px; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 }
+@layer components {
+  input[type=checkbox] { appearance: auto; width: 18px; height: 18px; min-height: 18px; padding: 0; accent-color: var(--blue); flex-shrink: 0; }
+  .list-command-bar { display: flex; justify-content: space-between; align-items: center; min-height: 42px; margin: -8px 0 10px; color: var(--muted); font-size: 12px; }
+  .list-command-bar .text-button { font-size: 12px; min-height: 40px; padding-right: 4px; }
+  .bulk-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; margin-bottom: 12px; background: #eef2fc; border: 1px solid #dce4f8; border-radius: 9px; position: sticky; top: 8px; z-index: 4; }
+  .selection-label { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; cursor: pointer; font-size: 13px; }
+  .bulk-toolbar .selection-label { margin-right: auto; white-space: nowrap; }
+  .mail-row.selecting { position: relative; padding-left: 34px; }
+  .row-selection { display: grid; place-items: center; position: absolute; left: -10px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; margin: 0; cursor: pointer; }
+  .mail-row.is-selected { background: #f5f7ff; }
+  .starred { color: #98721c; }
+  .row-sender .starred { margin-right: 6px; }
+  .address-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .address-text > small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .managed-address { gap: 3px; }
+  .address-group { margin-top: 18px; }
+  .address-group > summary { display: flex; gap: 9px; align-items: center; min-height: 48px; color: var(--muted); font-size: 13px; }
+  .address-group > summary::before { content: '›'; font-size: 18px; transition: transform .1s; }
+  .address-group[open] > summary::before { transform: rotate(90deg); }
+  .address-group > summary span { font-size: 12px; }
+  .address-edit { margin-top: 22px; }
+  .address-edit > input { width: 100%; }
+  .address-block { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+  .address-block p { font-size: 13px; line-height: 1.7; color: var(--muted); margin-bottom: 12px; }
+  .device-list { padding: 26px 0 12px; border-bottom: 1px solid var(--line); }
+  .device-list h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+  .device-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 15px 0; border-bottom: 1px solid var(--line); }
+  .device-row:last-child { border-bottom: 0; }
+  .device-row > div { min-width: 0; }
+  .device-row strong { display: block; font-weight: 500; font-size: 14px; overflow-wrap: anywhere; line-height: 1.7; }
+  .device-row small { display: block; color: var(--muted); margin-top: 5px; font-size: 12px; }
+  .device-row > button { flex-shrink: 0; font-size: 12px; }
+  .current-device { font-size: 11px; color: var(--blue); background: #edf2ff; padding: 3px 6px; border-radius: 4px; margin-left: 8px; }
+  .search-options > input, .search-options > select { width: 100%; }
+  .search-options > label:not(:first-child) { margin-top: 18px; }
+  .search-options select { min-height: 46px; border: 1px solid #d8dade; background: white; border-radius: var(--radius); padding: 10px; color: var(--text); }
+  .search-date-range { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 18px; }
+  .search-date-range input { width: 100%; }
+  .rule-sender { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+  .rule-choices { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+  .rule-intro { margin: -12px 0 20px; line-height: 1.7; }
+}
+@layer responsive {
+  @media(max-width:600px) {
+    .list-heading { gap: 12px; padding-bottom: 14px; }
+    .list-tools { width: 100%; }
+    .list-tools .search-field { flex: 1; min-width: 0; }
+    .list-tools .search-field input { width: 100%; }
+    .bulk-toolbar { gap: 0; padding: 4px 5px; top: max(8px, env(safe-area-inset-top)); }
+    .bulk-toolbar .icon-button { width: 38px; }
+    .bulk-toolbar .selection-label { gap: 6px; font-size: 12px; }
+    .settings-nav button { gap: 4px; font-size: 12px; }
+    .settings-nav button svg { display: none; }
+    .managed-address .icon-button { width: 34px; }
+    .managed-copy { gap: 6px; }
+    .reading-toolbar { gap: 4px; }
+    .reading-actions { gap: 0; }
+    .reading-actions .icon-button { width: 34px; }
+    .reading-toolbar > .text-button { padding-left: 7px; padding-right: 7px; gap: 4px; }
+    .search-date-range { grid-template-columns: minmax(0, 1fr); }
+    .mail-row.selecting .row-recipient { max-width: calc(100% - 165px); }
+    .row-code span { font-size: 13px; letter-spacing: .2px; }
+    .verification-code strong { font-size: clamp(20px, 6vw, 28px); letter-spacing: 1.5px; }
+  }
+}
+
+@layer components {
+  .two-factor strong { font-size: 14px; font-weight: 600; }
+  .two-factor .secondary-button { flex-shrink: 0; }
+  .totp-qr { display: block; width: 220px; max-width: 100%; height: auto; margin: 16px auto; image-rendering: pixelated; }
+  .manual-totp summary { font-size: 13px; color: var(--muted); min-height: 44px; padding: 12px 0; }
+  .manual-totp input { width: 100%; font-size: 12px; }
+  .recovery-download { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 20px; }
+  .recovery-download .selection-label { margin-top: 10px; font-size: 12px; line-height: 1.6; }
+  .account-otp { margin-top: 20px; }
+  .account-otp input { width: 100%; }
+}
+
+@layer components {
+  .account-password { border-bottom: 1px solid var(--line); }
+  .account-password > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 74px; font-size: 14px; font-weight: 600; }
+  .account-password[open] > summary svg { transform: rotate(90deg); }
+  .account-password .account-form { border: 0; padding: 0 0 24px; }
+}
+
+@layer components {
+  .link-review { margin-top: 22px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 16px 20px; font-size: 13px; line-height: 1.7; }
+  .link-review dt { color: var(--muted); }
+  .link-review dd { overflow-wrap: anywhere; }
+}

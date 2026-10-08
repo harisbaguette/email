@@ -2,6 +2,7 @@ import PostalMime from 'postal-mime';
 import { convert } from 'html-to-text';
 import { sha256 } from './auth';
 import type { Env } from './types';
+import { verificationFields } from './message-index';
 import type { AttachmentMeta } from '../shared/types';
 
 export const MAX_EMAIL_BYTES = 10 * 1024 * 1024;
@@ -25,6 +26,8 @@ function truncateBytes(value: string, max: number) {
 export async function receiveMail(message: ForwardableEmailMessage, env: Env) {
   const recipient = normalizeAddress(message.to, env.MAIL_DOMAIN);
   if (!recipient) { message.setReject('This recipient is not supported.'); return; }
+  const blocked = await env.DB.prepare('SELECT blocked FROM addresses WHERE address=?').bind(recipient).first<{ blocked: number }>();
+  if (blocked?.blocked) { message.setReject('This recipient is not accepting messages.'); return; }
   if (message.rawSize > MAX_EMAIL_BYTES) { message.setReject('Message exceeds the 10 MiB size limit.'); return; }
   const bytes = new Uint8Array(await new Response(message.raw as unknown as ReadableStream).arrayBuffer());
   if (bytes.byteLength > MAX_EMAIL_BYTES) { message.setReject('Message exceeds the 10 MiB size limit.'); return; }
@@ -57,18 +60,23 @@ export async function receiveMail(message: ForwardableEmailMessage, env: Env) {
     new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')),
   ).arrayBuffer();
   const compressed = new Uint8Array(gzip);
+  const verification = verificationFields(parsed.subject || '', storedText, storedHtml);
+  const sender = (parsed.from?.address || message.from).slice(0, 320).toLowerCase();
+  const rule = await env.DB.prepare('SELECT action FROM sender_rules WHERE sender=?').bind(sender).first<{ action: string }>();
   const queries = [
     env.DB.prepare('INSERT OR IGNORE INTO addresses (address, created_at) VALUES (?, ?)').bind(recipient, received),
     env.DB.prepare(`INSERT INTO messages (
       id, recipient, sender_address, sender_name, subject, preview, body_text, body_html,
-      attachments, received_at, sent_at, raw_size, stored_size, body_truncated, fingerprint
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, recipient, (parsed.from?.address || message.from).slice(0, 320),
+      attachments, received_at, sent_at, raw_size, stored_size, body_truncated, fingerprint,
+      verification_code, is_verification, verification_version, category, category_source, deleted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
+      .bind(id, recipient, sender,
         (parsed.from?.name || '').slice(0, 256), (parsed.subject || '(제목 없음)').slice(0, 1024),
         text.replace(/\s+/g, ' ').trim().slice(0, 220) || '메일을 열어 내용을 확인하세요.',
         storedText, storedHtml, JSON.stringify(attachments), received, parsed.date || null,
         bytes.byteLength, compressed.length + encoder.encode(storedText + storedHtml).length,
-        Number(storedText !== text || storedHtml !== html), fingerprint),
+        Number(storedText !== text || storedHtml !== html), fingerprint, verification.code, verification.verified,
+        rule?.action === 'promotions' ? 'promotions' : 'inbox', rule ? 'manual' : verification.verified ? 'protected' : 'pending', rule?.action === 'trash' ? received : null),
   ];
   for (let offset = 0, part = 0; offset < compressed.length; offset += CHUNK_BYTES, part++) {
     queries.push(env.DB.prepare('INSERT INTO raw_chunks (message_id, part, data) VALUES (?, ?, ?)')

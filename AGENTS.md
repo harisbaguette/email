@@ -5,6 +5,7 @@
 - `src/`: React 화면, 스타일 토큰, API 클라이언트, 격리된 메일 본문 표시.
 - `worker/`: HTTP API, 세션 인증, MIME 수신·D1 보관. HTTP로 메일을 집어넣는 운영 엔드포인트는 없다.
 - `worker/sorting.ts`: 저장 뒤 Jev 분류, D1 잠금·일일 요청 제한·장애 재시도. `sorting-policy.ts`의 기준은 `test/sorting-cases.json`으로 검증한다. 자동 분류는 삭제하지 않으며 사용자 분류를 덮어쓰지 않는다.
+- `worker/two-factor.ts`: 인증 앱 TOTP·일회용 복구 코드. 설정 키는 Worker secret `MFA_ENCRYPTION_KEY`로 암호화하며 테스트에서 운영 인증을 켜지 않는다.
 - `shared/`: 화면과 API의 공통 타입.
 - `migrations/`: D1 스키마. 운영 DB는 `bluekite-mail`이다.
 - `wrangler.jsonc`: Cloudflare 계정·Worker·D1·웹 도메인 설정. doweek의 DB나 Worker를 수정하지 않는다.

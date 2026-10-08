@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { verifyTwoFactor } from './two-factor';
 import { HttpError, type Env } from './types';
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
@@ -27,13 +28,16 @@ export async function getSession(request: Request, env: Env): Promise<string | n
   const digest = await sha256(token);
   const row = await env.DB.prepare('SELECT token_hash FROM sessions WHERE token_hash = ? AND expires_at > ?')
     .bind(digest, Date.now()).first();
+  if (row) await env.DB.prepare('UPDATE sessions SET last_seen_at=? WHERE token_hash=? AND last_seen_at < ?').bind(Date.now(), digest, Date.now() - 300_000).run();
   return row ? digest : null;
 }
 
-export async function createSession(env: Env) {
+export async function createSession(env: Env, request?: Request, expectedRevision?: string) {
+  const revision = expectedRevision ?? await authRevision(env);
   const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
-  await env.DB.prepare('INSERT INTO sessions (token_hash, expires_at, created_at) VALUES (?, ?, ?)')
-    .bind(await sha256(token), Date.now() + SESSION_SECONDS * 1000, Date.now()).run();
+  const result = await env.DB.prepare("INSERT INTO sessions (token_hash, expires_at, created_at, id, device_name, last_seen_at) SELECT ?, ?, ?, ?, ?, ? WHERE COALESCE((SELECT value FROM settings WHERE key='auth_revision'),'0')=?")
+    .bind(await sha256(token), Date.now() + SESSION_SECONDS * 1000, Date.now(), crypto.randomUUID().replaceAll('-', ''), deviceName(request?.headers.get('User-Agent') || ''), Date.now(), revision).run();
+  if (!result.meta.changes) throw new HttpError(409, '보안 설정이 변경됐습니다. 다시 로그인해 주세요.');
   return token;
 }
 
@@ -93,6 +97,11 @@ export async function limitLogin(request: Request, env: Env) {
     throw new HttpError(429, '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.');
   }
   const now = Date.now();
+  const global = await env.DB.prepare(`INSERT INTO login_attempts (ip_hash,attempts,window_start) VALUES ('account',1,?)
+    ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN window_start < ? THEN 1 ELSE attempts+1 END,
+    window_start=CASE WHEN window_start < ? THEN excluded.window_start ELSE window_start END RETURNING attempts`)
+    .bind(now, now - 900_000, now - 900_000).first<{ attempts: number }>();
+  if (!global || global.attempts > 50) throw new HttpError(429, '로그인 시도가 많습니다. 15분 뒤 다시 시도해 주세요.');
   const key = await sha256(ip);
   // Persist the attempt window across isolates; the edge limiter alone is per location.
   const attempt = await env.DB.prepare(`
@@ -108,33 +117,64 @@ export async function limitLogin(request: Request, env: Env) {
 
 export async function login(request: Request, env: Env) {
   const key = await limitLogin(request, env);
-  const { username, password } = await jsonBody(request);
+  const revision = await authRevision(env);
+  const { username, password, code } = await jsonBody(request);
   if (typeof username !== 'string' || username.length < 1 || username.length > 64) throw new HttpError(400, '아이디를 입력해 주세요.');
-  if (typeof password !== 'string' || password.length > 128) throw new HttpError(400, '비밀번호를 입력해 주세요.');
+  if (typeof password !== 'string' || encoder.encode(password).length > 72) throw new HttpError(400, '비밀번호를 입력해 주세요.');
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'password_hash'").first<{ value: string }>();
   if (!row) throw new HttpError(503, '수신함의 첫 비밀번호가 아직 설정되지 않았습니다.');
   const owner = await env.DB.prepare("SELECT value FROM settings WHERE key = 'login_username'").first<{ value: string }>();
   const passwordMatches = await bcrypt.compare(password, row.value);
   if (!passwordMatches || username.trim() !== (owner?.value || 'owner')) throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
+  await verifyTwoFactor(env, code);
   await env.DB.batch([
-    env.DB.prepare('DELETE FROM login_attempts WHERE ip_hash = ? OR window_start < ?').bind(key, Date.now() - 86_400_000),
+    env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash = ? OR ip_hash = 'account' OR window_start < ?").bind(key, Date.now() - 86_400_000),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(Date.now()),
   ]);
-  return createSession(env);
+  return createSession(env, request, revision);
 }
 
 export async function changePassword(request: Request, env: Env) {
   await limitLogin(request, env);
-  const { currentPassword, newPassword } = await jsonBody(request);
+  const { currentPassword, newPassword, code } = await jsonBody(request);
   validatePassword(newPassword);
-  if (typeof currentPassword !== 'string' || currentPassword.length > 128) throw new HttpError(400, '현재 비밀번호를 입력해 주세요.');
+  if (typeof currentPassword !== 'string' || encoder.encode(currentPassword).length > 72) throw new HttpError(400, '현재 비밀번호를 입력해 주세요.');
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'password_hash'").first<{ value: string }>();
   if (!row || !(await bcrypt.compare(currentPassword, row.value))) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
+  await verifyTwoFactor(env, code);
   const hash = await bcrypt.hash(newPassword, 12);
   await env.DB.batch([
     env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'password_hash'").bind(hash),
+    bumpAuthRevision(env),
+    env.DB.prepare('DELETE FROM two_factor_setups'),
     env.DB.prepare('DELETE FROM sessions'),
     env.DB.prepare('DELETE FROM push_subscriptions'),
   ]);
-  return createSession(env);
+  return createSession(env, request);
+}
+
+export function deviceName(agent: string) {
+  const os = /iPhone/.test(agent) ? 'iPhone' : /iPad/.test(agent) ? 'iPad' : /Android/.test(agent) ? 'Android' : /Windows/.test(agent) ? 'Windows' : /Macintosh/.test(agent) ? 'Mac' : /Linux/.test(agent) ? 'Linux' : '기기';
+  const browser = /Edg\//.test(agent) ? 'Edge' : /Firefox\//.test(agent) ? 'Firefox' : /Chrome\//.test(agent) ? 'Chrome' : /Safari\//.test(agent) ? 'Safari' : '브라우저';
+  return `${os} · ${browser}`;
+}
+export async function listSessions(env: Env, current: string) {
+  const { results } = await env.DB.prepare('SELECT id,device_name,created_at,last_seen_at,token_hash=? AS current FROM sessions WHERE expires_at>? ORDER BY last_seen_at DESC').bind(current, Date.now()).all();
+  return results.map(row => ({ ...row, current: Boolean(row.current) }));
+}
+export async function revokeSession(env: Env, current: string, id: string) {
+  if (id !== 'others' && !/^[a-f0-9]{32}$/.test(id)) throw new HttpError(400, '기기를 확인해 주세요.');
+  const where = id === 'others' ? 'token_hash != ?' : 'id=? AND token_hash != ?';
+  const values = id === 'others' ? [current] : [id, current];
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE ${where})`).bind(...values),
+    env.DB.prepare(`DELETE FROM sessions WHERE ${where}`).bind(...values),
+  ]);
+}
+
+export async function authRevision(env: Env) {
+  return (await env.DB.prepare("SELECT value FROM settings WHERE key='auth_revision'").first<{ value: string }>())?.value || '0';
+}
+export function bumpAuthRevision(env: Env) {
+  return env.DB.prepare("INSERT INTO settings (key,value) VALUES ('auth_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)");
 }

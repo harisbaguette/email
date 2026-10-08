@@ -64,7 +64,7 @@ describe('private Web Push', () => {
     const id = await register();
     expect((await request(`/api/push/${id}`, 'PATCH', { mode: 'inbox', preview: true })).status).toBe(200);
     const status = await (await request('/api/push')).json();
-    expect(status).toEqual({ configured: true, publicKey: pushEnv.VAPID_PUBLIC_KEY, devices: [{ id, mode: 'inbox', preview: 1 }] });
+    expect(status).toMatchObject({ configured: true, publicKey: pushEnv.VAPID_PUBLIC_KEY, devices: [{ id, mode: 'inbox', preview: 1 }] });
     expect(JSON.stringify(status)).not.toContain(subscription.keys.auth);
     expect((await request('/api/logout', 'POST', { pushId: id })).status).toBe(200);
     expect(await bindings.DB.prepare('SELECT * FROM push_subscriptions').first()).toBeNull();

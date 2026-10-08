@@ -35,6 +35,7 @@ test('settings on desktop and mobile; simulated subscription, push display and n
       if (width === 375) await page.screenshot({ path: `.local/settings-${tab}-mobile.png`, fullPage: true });
     }
   }
+  await page.locator('.account-password > summary').click();
   await page.getByLabel('현재 비밀번호', { exact: true }).fill('wrong-local-password');
   await page.getByLabel('새 비밀번호', { exact: true }).fill('local-new-password');
   await page.getByLabel('새 비밀번호 확인', { exact: true }).fill('local-different-password');

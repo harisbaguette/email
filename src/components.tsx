@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, Eye, EyeOff, MoreHorizontal, X } from 'lucide-react';
-import { api, errorMessage } from './api';
+import { ApiError, api, errorMessage } from './api';
 
 export function Brand() {
   return <div className="brand" aria-label="Bluekite Mail"><img className="brand-symbol" src="/brand/symbol.svg" alt="" width="42" height="42" /><span>bluekite</span></div>;
@@ -10,18 +10,21 @@ export function Login({ onLogin, initialError }: { onLogin: () => void; initialE
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
+  const [code, setCode] = useState('');
+  const [secondFactor, setSecondFactor] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError || '');
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
-    try { await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }); onLogin(); }
-    catch (error) { setError(errorMessage(error)); }
+    try { await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password, code }) }); onLogin(); }
+    catch (error) { if (error instanceof ApiError && error.status === 428) setSecondFactor(true); setError(errorMessage(error)); }
     finally { setBusy(false); }
   }
   return <main className="login-page"><section className="login-card"><Brand /><h1>로그인</h1>
     <form onSubmit={submit}>
       <label htmlFor="username">아이디</label><input id="username" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} autoFocus required maxLength={64} value={username} onChange={event => setUsername(event.target.value)} />
       <label htmlFor="password">비밀번호</label><div className="password-field"><input id="password" type={visible ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} aria-describedby={error ? 'login-error' : undefined} /><button type="button" className="icon-button" onClick={() => setVisible(value => !value)} aria-label={visible ? '비밀번호 숨기기' : '비밀번호 보기'}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+      {secondFactor && <><label htmlFor="login-code">인증 앱 코드 또는 복구 코드</label><input id="login-code" autoComplete="one-time-code" autoFocus value={code} onChange={event => setCode(event.target.value.trim())} required maxLength={24} /></>}
       {error && <p className="form-error" id="login-error" role="alert">{error}</p>}
       <button className="primary-button login-submit" disabled={busy}>{busy ? '확인 중…' : '로그인'}</button>
     </form>

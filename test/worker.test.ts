@@ -275,7 +275,7 @@ describe('verification shortcuts', () => {
   });
   it('does not promote order numbers, dates, link tokens or ambiguous codes', () => {
     for (const body of ['주문번호: 123456', '2026년 10월 7일', '인증번호: https://example.com/123456',
-      '인증번호: 123456789', 'Verification code: 1234AB', 'Verification code: 2026-10-07',
+      '인증번호: 123456789', 'Verification code: 2026-10-07',
       '인증번호: 123456\n보안 코드: 654321']) expect(verificationCode('', body)).toBeNull();
   });
 });

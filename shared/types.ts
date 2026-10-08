@@ -14,6 +14,9 @@ export interface MessageSummary {
   preview: string;
   received_at: number;
   is_read: number;
+  is_starred: number;
+  archived_at: number | null;
+  is_verification: number;
   deleted_at: number | null;
   category: 'inbox' | 'promotions';
   category_source: 'pending' | 'automatic' | 'protected' | 'manual';
@@ -32,13 +35,16 @@ export interface MailMessage extends MessageSummary {
 
 export interface VerificationLink { url: string; host: string; label: string }
 
-export interface AddressInfo { address: string; count: number; unread: number }
+export interface AddressInfo { address: string; count: number; unread: number; managed: number; label: string; hidden: number; blocked: number }
 export interface InboxResult {
   messages: MessageSummary[];
   addresses: AddressInfo[];
-  counts: { inbox: number; unread: number; promotions: number; all: number; trash: number };
+  counts: Record<Folder, number>;
   sorting: { enabled: boolean; pending: number; delayed: number };
   nextCursor: string | null;
 }
 
-export type Folder = 'inbox' | 'unread' | 'promotions' | 'all' | 'trash';
+export type Folder = 'inbox' | 'verification' | 'unread' | 'starred' | 'archive' | 'promotions' | 'all' | 'trash';
+export type MessageAction = 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'unarchive' | 'trash' | 'restore' | 'inbox' | 'promotions';
+export interface SessionInfo { id: string; device_name: string; created_at: number; last_seen_at: number; current: boolean }
+export interface SenderRule { sender: string; action: 'inbox' | 'promotions' | 'trash'; created_at: number }

@@ -1,10 +1,10 @@
 import type { Env } from './types';
-import { verificationCode } from '../shared/verification';
+import { verificationFields, indexLegacyMessages } from './message-index';
 import { sortingDecision, sortingRequest } from './sorting-policy';
 
 const DAILY_LIMIT = 500;
 const MINUTE = 60_000;
-type PendingMail = { subject: string; body_text: string; sort_attempts: number };
+type PendingMail = { subject: string; body_text: string; body_html: string; sort_attempts: number };
 
 async function setting(env: Env, key: string, value: string) {
   await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, value).run();
@@ -19,11 +19,11 @@ export async function sortMessage(env: Env, id: string) {
   // D1 compare-and-set: concurrent deliveries/cron runs cannot classify the same mail twice.
   const mail = await env.DB.prepare(`UPDATE messages SET sort_token = ?, sort_due_at = ?
     WHERE id = ? AND category_source = 'pending' AND deleted_at IS NULL AND sort_due_at <= ?
-    RETURNING subject, body_text, sort_attempts`).bind(token, now + 2 * MINUTE, id, now).first<PendingMail>();
+    RETURNING subject, body_text, body_html, sort_attempts`).bind(token, now + 2 * MINUTE, id, now).first<PendingMail>();
   if (!mail) return;
   try {
-    // Explicit numeric authentication codes stay local and remain in the inbox.
-    if (verificationCode(mail.subject, mail.body_text)) {
+    // Authentication codes and links stay local and remain in the inbox.
+    if (verificationFields(mail.subject, mail.body_text, mail.body_html).verified) {
       await env.DB.prepare(`UPDATE messages SET category = 'inbox', category_source = 'protected', sorted_at = ?, sort_token = NULL
         WHERE id = ? AND sort_token = ? AND category_source = 'pending'`).bind(now, id, token).run();
       return;
@@ -68,6 +68,7 @@ export async function sortMessage(env: Env, id: string) {
 }
 
 export async function sortPending(env: Env) {
+  await indexLegacyMessages(env);
   await setting(env, 'sort_last_run', String(Date.now()));
   const { results } = await env.DB.prepare(`SELECT id FROM messages WHERE category_source = 'pending'
     AND deleted_at IS NULL AND sort_due_at <= ? ORDER BY received_at ASC LIMIT 50`).bind(Date.now()).all<{ id: string }>();

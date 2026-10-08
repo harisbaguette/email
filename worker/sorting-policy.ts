@@ -5,6 +5,7 @@ function redact(text: string) {
   return text.replace(/https?:\/\/[^\s<>"']+/gi, '[link]')
     .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[email]')
     .replace(/\b[a-z\d_-]{20,}\b/gi, '[token]')
+    .replace(/\b(?=[a-z\d_-]{4,}\b)(?=[a-z\d_-]*\d)[a-z\d_-]{4,}\b/gi, '[token]')
     .replace(/\d{4,}/g, '[number]');
 }
 

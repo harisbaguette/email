@@ -1,6 +1,6 @@
 import { api } from './api';
 export type PushMode = 'verification' | 'inbox';
-export interface PushDevice { id: string; mode: PushMode; preview: number }
+export interface PushDevice { id: string; mode: PushMode; preview: number; device_name?: string; last_success_at?: number | null; created_at?: number; updated_at?: number }
 export interface PushStatus { configured: boolean; publicKey: string; devices: PushDevice[] }
 export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 export const needsHomeScreen = () => (/iPhone|iPad|iPod/.test(navigator.userAgent) || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)

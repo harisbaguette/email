@@ -1,8 +1,7 @@
 import { buildPushPayload } from '@block65/webcrypto-web-push';
-import { sha256 } from './auth';
+import { sha256, deviceName } from './auth';
 import { HttpError, type Env } from './types';
-import { verificationCode } from '../shared/verification';
-import { verificationLink } from './verification';
+import { verificationFields } from './message-index';
 
 type Subscription = { id: string; endpoint: string; p256dh: string; auth: string; mode: 'verification' | 'inbox'; preview: number; created_at: number };
 type Mail = { id: string; subject: string; sender_name: string; sender_address: string; body_text: string; body_html: string; category: string; category_source: string; received_at: number; is_read: number; deleted_at: number | null };
@@ -28,7 +27,7 @@ function preferences(body: Record<string, unknown>) {
   if (!['verification', 'inbox'].includes(body.mode as string) || typeof body.preview !== 'boolean') throw new HttpError(400, '알림 설정을 확인해 주세요.');
   return { mode: body.mode as string, preview: Number(body.preview) };
 }
-export async function saveSubscription(env: Env, session: string, body: Record<string, unknown>) {
+export async function saveSubscription(env: Env, session: string, body: Record<string, unknown>, agent = '') {
   if (!pushConfigured(env)) throw new HttpError(503, '알림 연결을 준비하고 있습니다.');
   const sub = body.subscription as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;
   if (!sub || !validEndpoint(sub.endpoint) || !sub.keys) throw new HttpError(400, '지원하지 않는 알림 연결입니다.');
@@ -40,10 +39,10 @@ export async function saveSubscription(env: Env, session: string, body: Record<s
   if ((count?.total || 0) >= 10) throw new HttpError(409, '알림은 최대 10개 기기에서 받을 수 있습니다.');
   const { mode, preview } = preferences(body);
   const now = Date.now();
-  await env.DB.prepare(`INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, mode, preview, session_hash, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth,
-    mode=excluded.mode, preview=excluded.preview, session_hash=excluded.session_hash, updated_at=excluded.updated_at`)
-    .bind(id, sub.endpoint, sub.keys.p256dh, sub.keys.auth, mode, preview, session, now, now).run();
+  await env.DB.prepare(`INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, mode, preview, session_hash, created_at, updated_at, device_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth,
+    mode=excluded.mode, preview=excluded.preview, session_hash=excluded.session_hash, updated_at=excluded.updated_at, device_name=excluded.device_name`)
+    .bind(id, sub.endpoint, sub.keys.p256dh, sub.keys.auth, mode, preview, session, now, now, deviceName(agent)).run();
   return { id };
 }
 export async function updateSubscription(env: Env, id: string, body: Record<string, unknown>) {
@@ -52,12 +51,13 @@ export async function updateSubscription(env: Env, id: string, body: Record<stri
   if (!result.meta.changes) throw new HttpError(404, '이 기기의 알림을 다시 연결해 주세요.');
 }
 export async function pushStatus(env: Env) {
-  const result = await env.DB.prepare('SELECT id, mode, preview FROM push_subscriptions').all();
+  await cleanSubscriptions(env);
+  const result = await env.DB.prepare('SELECT id,mode,preview,device_name,created_at,updated_at,last_success_at FROM push_subscriptions ORDER BY updated_at DESC').all();
   return { configured: pushConfigured(env), publicKey: env.VAPID_PUBLIC_KEY || '', devices: result.results };
 }
 export function notificationFor(mail: Mail, sub: Pick<Subscription, 'mode' | 'preview'>) {
   if (mail.deleted_at !== null || mail.is_read || mail.category === 'promotions') return null;
-  const verification = Boolean(verificationCode(mail.subject, mail.body_text) || verificationLink(mail.subject, mail.body_text, mail.body_html));
+  const verification = Boolean(verificationFields(mail.subject, mail.body_text, mail.body_html).verified);
   if (sub.mode === 'verification' && !verification) return null;
   if (!verification && mail.category_source === 'pending') return null;
   return {
@@ -74,6 +74,7 @@ async function send(env: Env, sub: Subscription, data: unknown) {
   const response = await fetch(sub.endpoint, { ...payload, redirect: 'manual', signal: AbortSignal.timeout(8000) });
   await response.body?.cancel();
   if (response.status === 404 || response.status === 410) await env.DB.prepare('DELETE FROM push_subscriptions WHERE id=?').bind(sub.id).run();
+  if (response.ok) await env.DB.prepare('UPDATE push_subscriptions SET last_success_at=? WHERE id=?').bind(Date.now(), sub.id).run();
   return response.status;
 }
 export async function testNotification(env: Env, id: string) {
@@ -92,6 +93,7 @@ export async function testNotification(env: Env, id: string) {
 }
 export async function processNotifications(env: Env, messageId?: string) {
   if (!pushConfigured(env)) return;
+  await cleanSubscriptions(env);
   const { results: subscriptions } = await env.DB.prepare('SELECT * FROM push_subscriptions').all<Subscription>();
   if (!subscriptions.length) return;
   const now = Date.now();
@@ -117,4 +119,8 @@ export async function processNotifications(env: Env, messageId?: string) {
       .bind(state, now + Math.min(3600000, 60_000 * 2 ** claim.attempts), row.message_id, row.subscription_id, claim.attempts).run();
   }));
   await env.DB.prepare('DELETE FROM push_deliveries WHERE message_id IN (SELECT id FROM messages WHERE received_at < ?)').bind(now - 86_400_000).run();
+}
+
+async function cleanSubscriptions(env: Env) {
+  await env.DB.prepare('DELETE FROM push_subscriptions WHERE NOT EXISTS (SELECT 1 FROM sessions WHERE token_hash=session_hash AND expires_at>?)').bind(Date.now()).run();
 }

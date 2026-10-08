@@ -1,5 +1,7 @@
 import PostalMime from 'postal-mime';
-import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie } from './auth';
+import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor } from './two-factor';
+import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie, listSessions, revokeSession, limitLogin, createSession } from './auth';
+import { actionUpdate, bulkMessages, updateAddress, ruleSender } from './management';
 import { getInbox } from './inbox';
 import { getRaw, MAX_EMAIL_BYTES, normalizeAddress, receiveMail } from './mail';
 import { HttpError, type Env } from './types';
@@ -20,6 +22,8 @@ function secured(response: Response): Response {
   result.headers.set('X-Content-Type-Options', 'nosniff');
   result.headers.set('Referrer-Policy', 'no-referrer');
   if (!result.headers.has('X-Frame-Options')) result.headers.set('X-Frame-Options', 'DENY');
+  if (!result.headers.has('Content-Security-Policy')) result.headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  result.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
   result.headers.set('X-Robots-Tag', 'noindex, nofollow');
   result.headers.set('Strict-Transport-Security', 'max-age=31536000');
   return result;
@@ -50,13 +54,44 @@ async function api(request: Request, env: Env): Promise<Response> {
     ]);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, '', 0) });
   }
+  if (path === '/api/two-factor' && method === 'GET') return json(await twoFactorStatus(env));
+  if (path.startsWith('/api/two-factor') && method === 'POST') {
+    await limitLogin(request, env);
+    const body = await jsonBody(request);
+    if (path === '/api/two-factor/setup') return json(await startTwoFactor(env, session, body.password));
+    if (path === '/api/two-factor/confirm') {
+      if (body.recoverySaved !== true) throw new HttpError(400, '복구 코드를 먼저 저장해 주세요.');
+      await confirmTwoFactor(env, session, body.code);
+      return json({ enabled: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request)) });
+    }
+    if (path === '/api/two-factor/disable') {
+      await disableTwoFactor(env, body.password, body.code);
+      return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request)) });
+    }
+  }
   if (path === '/api/password' && method === 'POST') {
     const token = await changePassword(request, env);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
   }
+  if (path === '/api/sessions' && method === 'GET') return json({ sessions: await listSessions(env, session) });
+  if (path.startsWith('/api/sessions/') && method === 'DELETE') { await revokeSession(env, session, path.slice('/api/sessions/'.length)); return json({ ok: true }); }
+  if (path === '/api/messages/bulk' && method === 'POST') return json(await bulkMessages(env, await jsonBody(request)));
+  if (path === '/api/addresses' && method === 'PATCH') { await updateAddress(env, await jsonBody(request)); return json({ ok: true }); }
+  if (path === '/api/rules' && method === 'GET') return json({ rules: (await env.DB.prepare('SELECT * FROM sender_rules ORDER BY created_at DESC').all()).results });
+  if (path === '/api/rules' && (method === 'POST' || method === 'DELETE')) {
+    const body = await jsonBody(request); const sender = ruleSender(body.sender);
+    if (method === 'DELETE') await env.DB.prepare('DELETE FROM sender_rules WHERE sender=?').bind(sender).run();
+    else {
+      if (!['inbox', 'promotions', 'trash'].includes(body.action as string)) throw new HttpError(400, '정리 방법을 선택해 주세요.');
+      const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM sender_rules WHERE sender != ?').bind(sender).first<{ n: number }>();
+      if ((count?.n || 0) >= 200) throw new HttpError(409, '자동 정리는 200개까지 등록할 수 있습니다.');
+      await env.DB.prepare('INSERT INTO sender_rules (sender,action,created_at) VALUES (?,?,?) ON CONFLICT(sender) DO UPDATE SET action=excluded.action').bind(sender, body.action, Date.now()).run();
+    }
+    return json({ ok: true });
+  }
   if (path === '/api/inbox' && method === 'GET') return json(await getInbox(url, env));
   if (path === '/api/push' && method === 'GET') return json(await pushStatus(env));
-  if (path === '/api/push' && method === 'POST') return json(await saveSubscription(env, session, await jsonBody(request)));
+  if (path === '/api/push' && method === 'POST') return json(await saveSubscription(env, session, await jsonBody(request), request.headers.get('User-Agent') || ''));
   const pushMatch = path.match(/^\/api\/push\/([a-f0-9]{64})(\/test)?$/);
   if (pushMatch) {
     if (pushMatch[2] && method === 'POST') { await testNotification(env, pushMatch[1]); return json({ ok: true }); }
@@ -67,8 +102,9 @@ async function api(request: Request, env: Env): Promise<Response> {
     const { local } = await jsonBody(request);
     const address = typeof local === 'string' ? normalizeAddress(`${local}@${env.MAIL_DOMAIN}`, env.MAIL_DOMAIN) : null;
     if (!address) throw new HttpError(400, '영문, 숫자, 점(.), 밑줄(_), +, -로 1~64자를 입력해 주세요.');
-    const result = await env.DB.prepare('INSERT OR IGNORE INTO addresses (address, created_at) VALUES (?, ?)').bind(address, Date.now()).run();
-    return json({ address, created: result.meta.changes > 0 }, result.meta.changes > 0 ? 201 : 200);
+    const existed = await env.DB.prepare('SELECT 1 FROM addresses WHERE address=?').bind(address).first();
+    const result = await env.DB.prepare('INSERT INTO addresses (address, created_at, managed) VALUES (?, ?, 1) ON CONFLICT(address) DO UPDATE SET managed=1, hidden=0').bind(address, Date.now()).run();
+    return json({ address, created: !existed && result.meta.changes > 0 }, existed ? 200 : 201);
   }
   if (path === '/api/settings' && method === 'GET') {
     const stats = await env.DB.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(stored_size), 0) AS bytes, MAX(received_at) AS lastReceived FROM messages').first();
@@ -110,14 +146,8 @@ async function api(request: Request, env: Env): Promise<Response> {
     }
     if (!action && method === 'PATCH') {
       const body = await jsonBody(request);
-      if (body.action === 'read' || body.action === 'unread') {
-        await env.DB.prepare('UPDATE messages SET is_read = ? WHERE id = ?').bind(Number(body.action === 'read'), id).run();
-      } else if (body.action === 'trash' || body.action === 'restore') {
-        await env.DB.prepare('UPDATE messages SET deleted_at = ? WHERE id = ?').bind(body.action === 'trash' ? Date.now() : null, id).run();
-      } else if (body.action === 'inbox' || body.action === 'promotions') {
-        await env.DB.prepare(`UPDATE messages SET category = ?, category_source = 'manual', sorted_at = ?, sort_token = NULL WHERE id = ?`)
-          .bind(body.action, Date.now(), id).run();
-      } else throw new HttpError(400, '지원하지 않는 작업입니다.');
+      const update = actionUpdate(body.action);
+      await env.DB.prepare(`UPDATE messages SET ${update.sql} WHERE id=?`).bind(...update.values, id).run();
       return json({ ok: true });
     }
     if (!action && method === 'DELETE') {

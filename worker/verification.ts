@@ -10,6 +10,8 @@ export function verificationLink(subject: string, text: string, html: string): V
     try {
       const url = new URL(raw);
       if (url.protocol !== 'https:' || url.username || url.password || url.href.length > 4096) return;
+      const host = url.hostname.toLowerCase();
+      if (!host.includes('.') || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host === 'localhost' || host.startsWith('[') || /^[\d.]+$/.test(host)) return;
       links.set(url.href, { url: url.href, host: url.hostname, label: label.trim().slice(0, 80) || '이메일 확인' });
     } catch { /* A relative or malformed link is not a usable verification shortcut. */ }
   };

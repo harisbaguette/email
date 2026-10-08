@@ -1,4 +1,5 @@
 export interface Env {
+  MFA_ENCRYPTION_KEY?: string;
   DB: D1Database;
   ASSETS: Fetcher;
   LOGIN_LIMITER: RateLimit;

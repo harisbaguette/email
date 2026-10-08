@@ -120,9 +120,29 @@ test('account loading failures recover without clearing the password draft', asy
   await page.getByRole('button', { name: '설정', exact: true }).click();
   await page.getByRole('button', { name: '계정', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('계정 정보를 불러오지');
+  await page.locator('.account-password > summary').click();
   await page.getByLabel('현재 비밀번호', { exact: true }).fill('unsaved-password');
   await context.unroute('**/api/settings');
   await page.getByRole('button', { name: '다시 시도', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByLabel('현재 비밀번호', { exact: true })).toHaveValue('unsaved-password');
+});
+
+
+test('background notification status checks do not disable the permission button before its click', async ({ page, context }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(Notification, 'permission', { get: () => 'granted' });
+    PushManager.prototype.getSubscription = async () => null;
+  });
+  await page.getByRole('button', { name:'설정',exact:true }).click();
+  await page.getByRole('button', { name:'알림',exact:true }).click();
+  const button=page.getByRole('button',{ name:'켜기',exact:true });
+  await expect(button).toBeEnabled();
+  let release!: () => void;
+  const pending=new Promise<void>(resolve=>{release=resolve;});
+  await context.route('**/api/push',async route=>{ await pending; await route.continue(); });
+  const loading=page.waitForRequest(r=>r.url().endsWith('/api/push'));
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus'))); await loading;
+  await expect(button).toBeEnabled();
+  release();
 });
