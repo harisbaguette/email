@@ -142,7 +142,8 @@ export async function login(request: Request, env: Env) {
   return createSession(env, request, revision);
 }
 
-export async function changePassword(request: Request, env: Env) {
+export async function changePassword(request: Request, env: Env, session: string) {
+  const revision = await authRevision(env);
   await limitLogin(request, env, 'security');
   const { currentPassword, newPassword, code } = await jsonBody(request);
   validatePassword(newPassword);
@@ -151,14 +152,13 @@ export async function changePassword(request: Request, env: Env) {
   if (!row || !(await bcrypt.compare(currentPassword, row.value))) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
   await verifyTwoFactor(env, code);
   const hash = await bcrypt.hash(newPassword, 12);
-  await env.DB.batch([
+  const nextRevision = await atomicAuthChange(env, session, revision, [
     env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'password_hash'").bind(hash),
-    bumpAuthRevision(env),
     env.DB.prepare('DELETE FROM two_factor_setups'),
     env.DB.prepare('DELETE FROM sessions'),
     env.DB.prepare('DELETE FROM push_subscriptions'),
   ]);
-  return createSession(env, request);
+  return createSession(env, request, nextRevision);
 }
 
 export function deviceName(agent: string) {
@@ -185,4 +185,22 @@ export async function authRevision(env: Env) {
 }
 export function bumpAuthRevision(env: Env) {
   return env.DB.prepare("INSERT INTO settings (key,value) VALUES ('auth_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)");
+}
+
+export async function atomicAuthChange(env: Env, session: string, revision: string, queries: D1PreparedStatement[]) {
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO auth_change_guard (id,valid) VALUES (1,
+        EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?)
+        AND COALESCE((SELECT value FROM settings WHERE key='auth_revision'),'0')=?)
+        ON CONFLICT(id) DO UPDATE SET valid=excluded.valid`).bind(session, Date.now(), revision),
+      bumpAuthRevision(env), ...queries,
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('auth_change_current')) {
+      throw new HttpError(409, '보안 설정이나 로그인 상태가 변경됐습니다. 다시 로그인해 주세요.');
+    }
+    throw error;
+  }
+  return String(Number(revision) + 1);
 }

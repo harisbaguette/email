@@ -1,6 +1,6 @@
 import { normalizeAuthCode } from '../shared/auth-code';
 import bcrypt from 'bcryptjs';
-import { sha256, bumpAuthRevision } from './auth';
+import { sha256, authRevision, atomicAuthChange } from './auth';
 import { HttpError, type Env } from './types';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -68,6 +68,7 @@ export async function verifyCurrentPassword(env: Env, password: unknown) {
   if (typeof password !== 'string' || new TextEncoder().encode(password).length > 72 || !row || !await bcrypt.compare(password, row.value)) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
 }
 export async function startTwoFactor(env: Env, session: string, password: unknown) {
+  const revision = await authRevision(env);
   await verifyCurrentPassword(env, password);
   if ((await twoFactorStatus(env)).enabled) throw new HttpError(409, '이미 2단계 인증이 켜져 있습니다.');
   const secret = base32(crypto.getRandomValues(new Uint8Array(20)));
@@ -75,30 +76,31 @@ export async function startTwoFactor(env: Env, session: string, password: unknow
   const hashes = await Promise.all(codes.map(sha256));
 
   const owner = await env.DB.prepare("SELECT value FROM settings WHERE key='login_username'").first<{ value: string }>();
-  await env.DB.batch([
+  await atomicAuthChange(env, session, revision, [
     env.DB.prepare('DELETE FROM two_factor_setups WHERE expires_at<?').bind(Date.now()),
     env.DB.prepare('INSERT INTO two_factor_setups (session_hash,secret,expires_at,recovery_hashes) VALUES (?,?,?,?) ON CONFLICT(session_hash) DO UPDATE SET secret=excluded.secret,expires_at=excluded.expires_at,recovery_hashes=excluded.recovery_hashes').bind(session, await seal(env, secret), Date.now() + 600000, JSON.stringify(hashes)),
   ]);
   return { secret, recoveryCodes: codes, uri: `otpauth://totp/${encodeURIComponent('Mailroom:' + (owner?.value || 'owner'))}?secret=${secret}&issuer=Mailroom&algorithm=SHA1&digits=6&period=30` };
 }
 export async function confirmTwoFactor(env: Env, session: string, code: unknown) {
+  const revision = await authRevision(env);
   const setup = await env.DB.prepare('SELECT secret,recovery_hashes FROM two_factor_setups WHERE session_hash=? AND expires_at>?').bind(session, Date.now()).first<{ secret: string; recovery_hashes: string }>();
   if (!setup) throw new HttpError(410, '등록 시간이 지났습니다. 처음부터 다시 연결해 주세요.');
   if ((await twoFactorStatus(env)).enabled) throw new HttpError(409, '이미 2단계 인증이 켜져 있습니다.');
   const counter = await matchingCounter(await open(env, setup.secret), code);
   if (counter === null) throw new HttpError(400, '인증 앱의 6자리 코드를 확인해 주세요.');
-  await env.DB.batch([
+  const nextRevision = await atomicAuthChange(env, session, revision, [
     env.DB.prepare('INSERT INTO two_factor (id,secret,last_counter) VALUES (1,?,?)').bind(setup.secret, counter),
     env.DB.prepare('DELETE FROM recovery_codes'),
     ...(JSON.parse(setup.recovery_hashes) as string[]).map(hash => env.DB.prepare('INSERT INTO recovery_codes (code_hash) VALUES (?)').bind(hash)),
     env.DB.prepare('DELETE FROM two_factor_setups'),
-    bumpAuthRevision(env),
     env.DB.prepare('DELETE FROM sessions'),
     env.DB.prepare('DELETE FROM push_subscriptions'),
   ]);
-  return { enabled: true };
+  return nextRevision;
 }
-export async function disableTwoFactor(env: Env, password: unknown, code: unknown) {
+export async function disableTwoFactor(env: Env, session: string, password: unknown, code: unknown) {
+  const revision = await authRevision(env);
   await verifyCurrentPassword(env, password); await verifyTwoFactor(env, code);
-  await env.DB.batch([bumpAuthRevision(env), ...['DELETE FROM two_factor', 'DELETE FROM two_factor_setups', 'DELETE FROM recovery_codes', 'DELETE FROM sessions', 'DELETE FROM push_subscriptions'].map(sql => env.DB.prepare(sql))]);
+  return atomicAuthChange(env, session, revision, ['DELETE FROM two_factor', 'DELETE FROM two_factor_setups', 'DELETE FROM recovery_codes', 'DELETE FROM sessions', 'DELETE FROM push_subscriptions'].map(sql => env.DB.prepare(sql)));
 }

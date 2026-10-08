@@ -62,16 +62,16 @@ async function api(request: Request, env: Env): Promise<Response> {
     if (path === '/api/two-factor/setup') return json(await startTwoFactor(env, session, body.password));
     if (path === '/api/two-factor/confirm') {
       if (body.recoverySaved !== true) throw new HttpError(400, '복구 코드를 먼저 저장해 주세요.');
-      await confirmTwoFactor(env, session, body.code);
-      return json({ enabled: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request)) });
+      const revision = await confirmTwoFactor(env, session, body.code);
+      return json({ enabled: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request, revision)) });
     }
     if (path === '/api/two-factor/disable') {
-      await disableTwoFactor(env, body.password, body.code);
-      return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request)) });
+      const revision = await disableTwoFactor(env, session, body.password, body.code);
+      return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, await createSession(env, request, revision)) });
     }
   }
   if (path === '/api/password' && method === 'POST') {
-    const token = await changePassword(request, env);
+    const token = await changePassword(request, env, session);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
   }
   if (path === '/api/sessions' && method === 'GET') return json({ sessions: await listSessions(env, session) });

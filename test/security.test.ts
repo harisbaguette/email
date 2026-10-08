@@ -2,7 +2,9 @@
 import { env, applyD1Migrations } from 'cloudflare:test';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
-import { createSession, jsonBody, limitLogin } from '../worker/auth';
+import bcrypt from 'bcryptjs';
+import { createSession, changePassword, jsonBody, limitLogin, sha256, bumpAuthRevision } from '../worker/auth';
+import { startTwoFactor, confirmTwoFactor, disableTwoFactor, totp } from '../worker/two-factor';
 import { receiveMail, getRaw, MAX_EMAIL_BYTES } from '../worker/mail';
 import { cleanSecurityState, reserveDelivery, STORAGE_MESSAGES, DAILY_MAIL_BYTES } from '../worker/abuse';
 import { verificationLink } from '../worker/verification';
@@ -11,7 +13,7 @@ import type { Env } from '../worker/types';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
 const allow = { limit: async () => ({ success: true }) } as RateLimit;
-const testEnv: Env = { ...bindings, API_LIMITER: allow, LOGIN_LIMITER: allow, DOWNLOAD_LIMITER: allow };
+const testEnv: Env = { ...bindings, API_LIMITER: allow, LOGIN_LIMITER: allow, DOWNLOAD_LIMITER: allow, MFA_ENCRYPTION_KEY: btoa('x'.repeat(32)) };
 const origin = 'https://email.bluekite.co.kr';
 const recipient = 'safe@bluekite.co.kr';
 let cookie: string;
@@ -25,7 +27,7 @@ async function request(path: string, init: RequestInit = {}, customEnv = testEnv
 }
 beforeAll(() => applyD1Migrations(bindings.DB, bindings.TEST_MIGRATIONS));
 beforeEach(async () => {
-  await bindings.DB.batch(['messages', 'addresses', 'sessions', 'login_attempts', 'settings', 'mail_limits', 'two_factor_setups', 'push_subscriptions'].map(table => bindings.DB.prepare(`DELETE FROM ${table}`)));
+  await bindings.DB.batch(['messages', 'addresses', 'sessions', 'login_attempts', 'settings', 'mail_limits', 'two_factor', 'recovery_codes', 'two_factor_setups', 'push_subscriptions'].map(table => bindings.DB.prepare(`DELETE FROM ${table}`)));
   await bindings.DB.prepare('UPDATE mail_storage SET messages=0,bytes=0 WHERE id=1').run();
   await bindings.DB.prepare('INSERT INTO addresses (address,created_at,managed) VALUES (?,0,1)').bind(recipient).run();
   cookie = `__Host-bluekite_session=${await createSession(testEnv)}`;
@@ -122,6 +124,47 @@ describe('mail bomb protection', () => {
 });
 
 describe('HTTP and account abuse boundaries', () => {
+  it.each(['password', 'mfa-setup', 'mfa-disable'])('rolls back %s if the device is revoked during reauthentication', async action => {
+    const password = 'test-security-password';
+    const passwordHash = await bcrypt.hash(password,4);
+    await bindings.DB.prepare("INSERT INTO settings VALUES ('password_hash',?)").bind(passwordHash).run();
+    let session = await sha256(cookie.split('=')[1]);
+    let recoveryCode = '';
+    if (action === 'mfa-disable') {
+      const setup = await startTwoFactor(testEnv,session,password);
+      await confirmTwoFactor(testEnv,session,await totp(setup.secret,Math.floor(Date.now()/30000)));
+      session = await sha256(await createSession(testEnv));
+      recoveryCode = setup.recoveryCodes[0];
+    }
+    const raceEnv = { ...testEnv, DB: {
+      prepare: bindings.DB.prepare.bind(bindings.DB),
+      batch: async (queries: D1PreparedStatement[]) => {
+        await bindings.DB.prepare('DELETE FROM sessions').run();
+        return bindings.DB.batch(queries);
+      },
+    } as D1Database };
+    const operation = action === 'password'
+      ? changePassword(new Request(origin, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:password,newPassword:'unexpected-new-password'})}),raceEnv,session)
+      : action === 'mfa-setup' ? startTwoFactor(raceEnv,session,password) : disableTwoFactor(raceEnv,session,password,recoveryCode);
+    await expect(operation).rejects.toMatchObject({status:409});
+    expect((await bindings.DB.prepare("SELECT value FROM settings WHERE key='password_hash'").first<any>()).value).toBe(passwordHash);
+    expect(await bindings.DB.prepare('SELECT 1 FROM two_factor_setups').first()).toBeNull();
+    expect(Boolean(await bindings.DB.prepare('SELECT 1 FROM two_factor').first())).toBe(action==='mfa-disable');
+  });
+  it('does not let an in-flight MFA confirmation override a later credential reset', async () => {
+    const session = await sha256(cookie.split('=')[1]);
+    await bindings.DB.prepare("INSERT INTO settings VALUES ('password_hash',?)").bind(await bcrypt.hash('test-security-password',4)).run();
+    const setup = await startTwoFactor(testEnv,session,'test-security-password');
+    const raceEnv = { ...testEnv, DB: {
+      prepare: bindings.DB.prepare.bind(bindings.DB),
+      batch: async (queries: D1PreparedStatement[]) => {
+        await bindings.DB.batch([bumpAuthRevision(testEnv), bindings.DB.prepare('DELETE FROM sessions'), bindings.DB.prepare('DELETE FROM two_factor_setups')]);
+        return bindings.DB.batch(queries);
+      },
+    } as D1Database };
+    await expect(confirmTwoFactor(raceEnv,session,await totp(setup.secret,Math.floor(Date.now()/30000)))).rejects.toMatchObject({status:409});
+    expect(await bindings.DB.prepare('SELECT 1 FROM two_factor').first()).toBeNull();
+  });
   it('rate-limits anonymous requests before a D1 query or session lookup', async () => {
     const DB = { prepare: vi.fn(() => { throw new Error('unexpected DB access'); }) } as unknown as D1Database;
     const blocked = { ...testEnv, DB, API_LIMITER: { limit: async () => ({ success: false }) } as RateLimit };
