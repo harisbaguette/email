@@ -68,6 +68,7 @@ test('settings on desktop and mobile; simulated subscription, push display and n
   await expect(page.getByRole('heading', { name: '알림', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '끄기', exact: true }).click();
   await expect(page.getByRole('button', { name: '켜기', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '다른 알림 기기', exact: true })).toHaveCount(0);
   expect((await (await context.request.get('/api/push')).json()).devices).toEqual([]);
   await page.evaluate(() => { PushManager.prototype.subscribe = async () => { throw new DOMException('Registration failed', 'NotAllowedError'); }; });
   await page.getByRole('button', { name: '켜기', exact: true }).click();

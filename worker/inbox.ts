@@ -3,6 +3,8 @@ import { HttpError, type Env } from './types';
 import { normalizeAddress } from './mail';
 import { sortingStatus } from './sorting';
 import { indexLegacyMessages } from './message-index';
+import { SEARCH_LIMIT, searchTokens, validSearchDate } from '../shared/search';
+import { addressQuery } from './management';
 
 export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   await indexLegacyMessages(env);
@@ -10,7 +12,8 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   if (!['inbox', 'verification', 'unread', 'starred', 'archive', 'promotions', 'all', 'trash'].includes(folder)) throw new HttpError(400, '수신함을 찾을 수 없습니다.');
   const recipient = url.searchParams.get('address') || '';
   if (recipient && !normalizeAddress(recipient, env.MAIL_DOMAIN)) throw new HttpError(400, '이메일 주소를 확인해 주세요.');
-  const q = (url.searchParams.get('q') || '').trim().slice(0, 200);
+  const q = (url.searchParams.get('q') || '').trim();
+  if (q.length > SEARCH_LIMIT) throw new HttpError(400, `검색 조건은 ${SEARCH_LIMIT}자까지 입력할 수 있습니다.`);
   const clauses = [folder === 'trash' ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL'];
   const params: (string | number)[] = [];
   if (folder === 'inbox' || folder === 'unread') clauses.push("category = 'inbox' AND archived_at IS NULL");
@@ -20,7 +23,7 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
   if (folder === 'promotions') clauses.push("category = 'promotions'");
   if (folder === 'unread') clauses.push('is_read = 0');
   if (recipient) { clauses.push('recipient = ?'); params.push(recipient); }
-  const tokens = q.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+  const tokens = searchTokens(q);
   const like = (value: string) => `%${value.replace(/[\\%_]/g, '\\$&')}%`;
   for (const token of tokens) {
     const parsed = token.match(/^(from|to|subject|after|before|has|is):(.+)$/i);
@@ -28,10 +31,11 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
     const key = parsed?.[1].toLowerCase();
     if (key === 'from' || key === 'to' || key === 'subject') {
       const column = key === 'from' ? 'sender_address' : key === 'to' ? 'recipient' : 'subject';
-      clauses.push(`${column} LIKE ? ESCAPE '\\'`); params.push(like(value));
+      if (key === 'from') { clauses.push("(sender_address LIKE ? ESCAPE '\\' OR sender_name LIKE ? ESCAPE '\\')"); params.push(like(value), like(value)); }
+      else { clauses.push(`${column} LIKE ? ESCAPE '\\'`); params.push(like(value)); }
     } else if (key === 'after' || key === 'before') {
       const stamp = Date.parse(value + 'T00:00:00+09:00');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(stamp)) throw new HttpError(400, '검색 날짜는 YYYY-MM-DD로 입력해 주세요.');
+      if (!validSearchDate(value)) throw new HttpError(400, '검색 날짜는 올바른 YYYY-MM-DD로 입력해 주세요.');
       clauses.push(`received_at ${key === 'after' ? '>=' : '<'} ?`); params.push(stamp);
     } else if (key === 'has' && value === 'attachment') clauses.push("attachments != '[]'");
     else if (key === 'is' && ['unread', 'read', 'starred', 'verification'].includes(value)) clauses.push(value === 'unread' ? 'is_read=0' : value === 'read' ? 'is_read=1' : value === 'starred' ? 'is_starred=1' : 'is_verification=1');
@@ -65,10 +69,7 @@ export async function getInbox(url: URL, env: Env): Promise<InboxResult> {
       COALESCE(SUM(deleted_at IS NULL AND is_starred=1), 0) AS starred,
       COALESCE(SUM(deleted_at IS NULL AND archived_at IS NOT NULL), 0) AS archive,
       COALESCE(SUM(deleted_at IS NOT NULL), 0) AS trash FROM messages`),
-    env.DB.prepare(`SELECT a.address, a.managed, a.label, a.hidden, a.blocked,
-      COUNT(m.id) AS count, COALESCE(SUM(m.is_read = 0 AND m.category = 'inbox'), 0) AS unread
-      FROM addresses a LEFT JOIN messages m ON m.recipient = a.address AND m.deleted_at IS NULL
-      GROUP BY a.address ORDER BY a.created_at DESC, a.address`),
+    env.DB.prepare(addressQuery),
   ]);
   const rows = results[0].results as Record<string, unknown>[];
   const more = rows.length > 50;

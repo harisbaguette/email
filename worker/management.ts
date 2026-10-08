@@ -2,6 +2,11 @@ import type { MessageAction } from '../shared/types';
 import { HttpError, type Env } from './types';
 import { normalizeAddress } from './mail';
 
+export const addressQuery = `SELECT a.address, a.managed, a.label, a.hidden, a.blocked,
+  COUNT(m.id) AS count, COALESCE(SUM(m.is_read = 0 AND m.category = 'inbox'), 0) AS unread
+  FROM addresses a LEFT JOIN messages m ON m.recipient = a.address AND m.deleted_at IS NULL
+  GROUP BY a.address ORDER BY a.created_at DESC, a.address`;
+
 export function actionUpdate(action: unknown): { sql: string; values: (number | string | null)[] } {
   switch (action as MessageAction) {
     case 'read': case 'unread': return { sql: 'is_read=?', values: [Number(action === 'read')] };

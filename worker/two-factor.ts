@@ -1,3 +1,4 @@
+import { normalizeAuthCode } from '../shared/auth-code';
 import bcrypt from 'bcryptjs';
 import { sha256, bumpAuthRevision } from './auth';
 import { HttpError, type Env } from './types';
@@ -36,6 +37,7 @@ async function open(env: Env, data: string) {
   return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12), additionalData: new TextEncoder().encode('bluekite-totp-v1') }, await encryptionKey(env), bytes.slice(12)));
 }
 async function matchingCounter(secret: string, code: unknown) {
+  if (typeof code === 'string') code = normalizeAuthCode(code);
   if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return null;
   const current = Math.floor(Date.now() / 30000);
   for (const offset of [0, -1, 1]) if (await totp(secret, current + offset) === code) return current + offset;
@@ -45,6 +47,7 @@ export async function twoFactorStatus(env: Env) {
   return { enabled: Boolean(await env.DB.prepare('SELECT 1 FROM two_factor').first()), configured: Boolean(env.MFA_ENCRYPTION_KEY), recoveryRemaining: (await env.DB.prepare('SELECT COUNT(*) AS n FROM recovery_codes').first<{ n: number }>())?.n || 0 };
 }
 export async function verifyTwoFactor(env: Env, code: unknown) {
+  if (typeof code === 'string') code = normalizeAuthCode(code);
   const row = await env.DB.prepare('SELECT secret,last_counter FROM two_factor WHERE id=1').first<{ secret: string; last_counter: number }>();
   if (!row) return;
   if (!code) throw new HttpError(428, '인증 앱 코드 또는 복구 코드를 입력해 주세요.');

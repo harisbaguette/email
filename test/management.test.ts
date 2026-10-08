@@ -10,6 +10,7 @@ import { sortMessage } from '../worker/sorting';
 import { verificationCode } from '../shared/verification';
 import { verificationLink } from '../worker/verification';
 import { totp } from '../worker/two-factor';
+import { searchFields, searchQuery, validSearchDate, SEARCH_LIMIT } from '../shared/search';
 import type { Env } from '../worker/types';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
@@ -43,12 +44,15 @@ describe('mail management and security boundaries', () => {
   });
   it('separates automatic and managed addresses, preserves hidden state, and rejects disabled recipients', async () => {
     await mail('hello');
+    expect((await request('/api/addresses', 'GET', undefined, origin, '')).status).toBe(401);
+    expect((await (await request('/api/addresses')).json() as any).addresses).toHaveLength(1);
     let item = (await (await request('/api/inbox')).json() as any).addresses[0]; expect(item.managed).toBe(0);
     expect((await request('/api/addresses','POST',{ local:'test' })).status).toBe(200);
     expect((await request('/api/addresses','PATCH',{ address:'test@bluekite.co.kr', label:'개인', hidden:true })).status).toBe(200);
     await mail('second');
     item = (await (await request('/api/inbox')).json() as any).addresses[0]; expect(item).toMatchObject({ managed:1, hidden:1, label:'개인', count:2 });
     await request('/api/addresses','PATCH',{ address:item.address, blocked:true });
+    expect((await request('/api/addresses','POST',{ local:'test' })).status).toBe(409);
     expect((await mail('blocked')).reject).toHaveBeenCalledOnce();
     expect((await bindings.DB.prepare('SELECT COUNT(*) AS n FROM messages').first<any>()).n).toBe(2);
     expect((await request('/api/addresses','PATCH',{ address:item.address, hidden:'false' })).status).toBe(400);
@@ -65,7 +69,20 @@ describe('mail management and security boundaries', () => {
     expect((await inbox('folder=all&q='+encodeURIComponent("from:' OR 1=1--"))).length).toBe(0);
     expect((await inbox('folder=all&q=has:attachment')).length).toBe(0);
     expect((await request('/api/inbox?q=before:not-a-date')).status).toBe(400);
+    expect((await request('/api/inbox?q=after:2026-02-30')).status).toBe(400);
+    expect((await request('/api/inbox?q='+ 'a'.repeat(SEARCH_LIMIT + 1))).status).toBe(400);
     expect((await request('/api/inbox?cursor=invalid')).status).toBe(400);
+  });
+  it('round-trips editable search fields without losing extra filters, with inclusive last dates', () => {
+    const query = 'is:unread "two words" from:"Bluekite Team" to:hi@bluekite.co.kr after:2026-02-28 before:2026-03-01 has:attachment';
+    const fields = searchFields(query);
+    expect(fields).toMatchObject({ text: 'is:unread "two words"', from: 'Bluekite Team', through: '2026-02-28', attachment: true });
+    fields.from = 'Other Team';
+    const updated = searchQuery(fields);
+    expect(updated).not.toContain('Bluekite'); expect(updated).toContain('before:2026-03-01');
+    expect(searchFields(updated)).toEqual(fields);
+    expect(searchFields('from:a from:b subject:"news update"').text).toBe('from:b subject:"news update"');
+    expect(validSearchDate('2026-02-30')).toBe(false); expect(validSearchDate('2024-02-29')).toBe(true);
   });
   it('bulk updates only explicit IDs and permanently deletes only mail already in trash', async () => {
     const a = (await mail('a')).id!; const b = (await mail('b')).id!;
@@ -155,7 +172,7 @@ describe('two factor authentication', () => {
     expect((await request('/api/inbox','GET',undefined,origin,oldCookie)).status).toBe(401);
     expect((await request('/api/login','POST',{ username:'owner',password })).status).toBe(428);
     expect((await request('/api/login','POST',{ username:'owner',password,code:setup.code })).status).toBe(400);
-    const login=await request('/api/login','POST',{ username:'owner',password,code:setup.recoveryCodes[0] }); expect(login.status).toBe(200);
+    const login=await request('/api/login','POST',{ username:'owner',password,code:' '+setup.recoveryCodes[0].replaceAll('-', ' – ')+' ' }); expect(login.status).toBe(200);
     expect((await request('/api/login','POST',{ username:'owner',password,code:setup.recoveryCodes[0] })).status).toBe(400);
     expect((await (await request('/api/two-factor')).json() as any).recoveryRemaining).toBe(7);
     expect((await request('/api/password','POST',{ currentPassword:password,newPassword:'new-password-test' })).status).toBe(428);

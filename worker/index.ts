@@ -1,7 +1,7 @@
 import PostalMime from 'postal-mime';
 import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor } from './two-factor';
 import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie, listSessions, revokeSession, limitLogin, createSession } from './auth';
-import { actionUpdate, bulkMessages, updateAddress, ruleSender } from './management';
+import { actionUpdate, bulkMessages, updateAddress, ruleSender, addressQuery } from './management';
 import { getInbox } from './inbox';
 import { getRaw, MAX_EMAIL_BYTES, normalizeAddress, receiveMail } from './mail';
 import { HttpError, type Env } from './types';
@@ -76,6 +76,7 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === '/api/sessions' && method === 'GET') return json({ sessions: await listSessions(env, session) });
   if (path.startsWith('/api/sessions/') && method === 'DELETE') { await revokeSession(env, session, path.slice('/api/sessions/'.length)); return json({ ok: true }); }
   if (path === '/api/messages/bulk' && method === 'POST') return json(await bulkMessages(env, await jsonBody(request)));
+  if (path === '/api/addresses' && method === 'GET') return json({ addresses: (await env.DB.prepare(addressQuery).all()).results });
   if (path === '/api/addresses' && method === 'PATCH') { await updateAddress(env, await jsonBody(request)); return json({ ok: true }); }
   if (path === '/api/rules' && method === 'GET') return json({ rules: (await env.DB.prepare('SELECT * FROM sender_rules ORDER BY created_at DESC').all()).results });
   if (path === '/api/rules' && (method === 'POST' || method === 'DELETE')) {
@@ -102,8 +103,10 @@ async function api(request: Request, env: Env): Promise<Response> {
     const { local } = await jsonBody(request);
     const address = typeof local === 'string' ? normalizeAddress(`${local}@${env.MAIL_DOMAIN}`, env.MAIL_DOMAIN) : null;
     if (!address) throw new HttpError(400, '영문, 숫자, 점(.), 밑줄(_), +, -로 1~64자를 입력해 주세요.');
-    const existed = await env.DB.prepare('SELECT 1 FROM addresses WHERE address=?').bind(address).first();
-    const result = await env.DB.prepare('INSERT INTO addresses (address, created_at, managed) VALUES (?, ?, 1) ON CONFLICT(address) DO UPDATE SET managed=1, hidden=0').bind(address, Date.now()).run();
+    const existed = await env.DB.prepare('SELECT blocked FROM addresses WHERE address=?').bind(address).first<{ blocked: number }>();
+    if (existed?.blocked) throw new HttpError(409, '수신을 중지한 주소입니다. 주소 설정에서 다시 수신하도록 바꿔 주세요.');
+    const result = await env.DB.prepare('INSERT INTO addresses (address, created_at, managed) VALUES (?, ?, 1) ON CONFLICT(address) DO UPDATE SET managed=1, hidden=0 WHERE addresses.blocked=0').bind(address, Date.now()).run();
+    if (!result.meta.changes) throw new HttpError(409, '이 주소의 수신 설정이 바뀌었습니다. 주소 목록을 새로고침해 주세요.');
     return json({ address, created: !existed && result.meta.changes > 0 }, existed ? 200 : 201);
   }
   if (path === '/api/settings' && method === 'GET') {

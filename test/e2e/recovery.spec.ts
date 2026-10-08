@@ -55,6 +55,7 @@ test('expired push connections offer reconnection instead of a stale connected s
   await expect(page.getByRole('alert')).toContainText('만료');
   await expect(page.getByRole('button', { name: '켜기', exact: true })).toBeVisible();
   await expect(page.getByText('연결됨', { exact: true })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: '다른 알림 기기', exact: true })).toHaveCount(0);
 });
 
 test('session network failures can be retried without asking for credentials again', async ({ page, context }) => {
