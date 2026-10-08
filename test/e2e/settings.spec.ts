@@ -45,7 +45,7 @@ test('settings on desktop and mobile; simulated subscription, push display and n
   await page.getByRole('button', { name: '켜기', exact: true }).click();
   await expect(page.getByText('연결됨', { exact: true })).toBeVisible();
   await expect(page.getByRole('switch', { name: '내용 미리보기' })).toHaveAttribute('aria-checked', 'false');
-  await page.getByRole('combobox', { name: '알림 받을 메일' }).selectOption('inbox');
+  await page.getByRole('combobox', { name: '알림 받을 메일' }).click(); await page.getByRole('option', { name: '받은 메일 전체', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('저장됨');
   await page.getByRole('switch', { name: '내용 미리보기' }).click();
   await expect(page.getByRole('switch', { name: '내용 미리보기' })).toHaveAttribute('aria-checked', 'true');

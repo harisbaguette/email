@@ -38,11 +38,11 @@ test('advanced filters reopen as fields, replace existing values and preserve ad
   await page.getByRole('button', { name: '검색', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '메일 검색' })).not.toHaveValue(/Bluekite/);
   await expect(page.getByRole('button', { name: '검색 지우기', exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('verification');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '인증 메일', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '메일 검색' })).toHaveValue(/nobody/);
   await expect(page.getByRole('button', { name: '주소 필터 해제' })).toBeVisible();
   await page.getByRole('button', { name: '주소 필터 해제' }).click();
-  await expect(page.getByRole('combobox', { name: '메일함' })).toHaveValue('verification');
+  await expect(page.getByRole('combobox', { name: '메일함' })).toHaveText('인증 메일');
   await expect(page.getByRole('searchbox', { name: '메일 검색' })).toHaveValue(/nobody/);
   await page.getByRole('button', { name: '검색 지우기', exact: true }).click();
   await expect(page.locator('.mail-row')).toHaveCount(1);
@@ -67,7 +67,7 @@ test('unread navigation remains stable; row selection stays in the list and arch
   await page.getByRole('button', { name: '다음 메일', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(ids[1]));
   await page.getByRole('button', { name: '메일 목록으로', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '메일함' })).toHaveValue('unread');
+  await expect(page.getByRole('combobox', { name: '메일함' })).toHaveText('안 읽은 메일');
   await page.goForward(); await expect(page).toHaveURL(new RegExp(ids[1]));
   await page.getByLabel('메일 작업', { exact: true }).click();
   await page.getByRole('button', { name: '안 읽음으로 표시', exact: true }).click();
@@ -80,11 +80,11 @@ test('unread navigation remains stable; row selection stays in the list and arch
   await expect(page.getByRole('button', { name: '메일 목록으로', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '선택한 메일 보관', exact: true }).click();
   await expect(page.locator('.mail-row')).toHaveCount(1);
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('archive');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '보관함', exact: true }).click();
   await expect(page.locator('.mail-row')).toHaveCount(1);
   await page.getByRole('button', { name: '되돌리기', exact: true }).click();
   await expect(page.locator('.mail-row')).toHaveCount(0);
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('unread');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '안 읽은 메일', exact: true }).click();
   await expect(page.locator('.mail-row')).toHaveCount(2);
   await page.locator('.row-open').first().click();
   await page.getByLabel('메일 작업', { exact: true }).click();
@@ -131,7 +131,7 @@ test('sender rules are editable and removal can be undone without recreating the
     await expect(page.getByRole('button', { name: '수정', exact: true })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByLabel('이동할 메일함', { exact: true }).selectOption('inbox');
+    await page.getByRole('combobox', { name: '이동할 메일함', exact: true }).click(); await page.getByRole('option', { name: '받은 메일', exact: true }).click();
     await page.getByRole('button', { name: '저장', exact: true }).click();
     await expect(page.getByText('받은 메일로 이동', { exact: true })).toBeVisible();
     await page.getByLabel(`${sender} 규칙 관리`, { exact: true }).click();

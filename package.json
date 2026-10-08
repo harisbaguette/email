@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",
+    "@radix-ui/react-select": "^2.3.8",
     "bcryptjs": "^3.0.3",
     "domutils": "^4.0.2",
     "html-to-text": "^10.0.1",

@@ -34,7 +34,7 @@ test('folder errors never show messages from the previous folder', async ({ page
   });
   await page.getByRole('button', { name: '새로고침', exact: true }).click();
   await expect(page.getByText(message.subject)).toBeVisible();
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('trash');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '휴지통', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('연결을 확인');
   await expect(page.getByText(message.subject)).not.toBeVisible();
 });

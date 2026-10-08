@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, Archive, Star, ListChecks, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown, Copy, Download, Inbox, Mail, MailOpen, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip, Megaphone, ArrowUpRight } from 'lucide-react';
+import { ArrowLeft, Archive, Star, ListChecks, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown, Copy, Download, Inbox, Mail, MailOpen, RefreshCw, Search, Settings, Trash2, Undo2, X, Paperclip, Megaphone, ArrowUpRight, ShieldCheck, Mails } from 'lucide-react';
 import type { Folder, InboxResult, MailMessage, MessageSummary, MessageAction } from '../shared/types';
 import { api, copyText, errorMessage } from './api';
 import { ActionMenu, Brand, EmptyState, formatBytes, Login, Modal, Toast } from './components';
@@ -7,11 +7,17 @@ import { SettingsPage, type SettingsTab, type AddressDraft } from './Settings';
 import { logout, clearBrowserPush } from './notifications';
 import { EmailBody } from './EmailBody';
 import { SearchDialog } from './SearchDialog';
+import { Select } from './Select';
 import { verificationCode } from '../shared/verification';
 import { SEARCH_LIMIT } from '../shared/search';
 
 const emptyInbox: InboxResult = { messages: [], addresses: [], counts: { verification: 0, starred: 0, archive: 0, inbox: 0, unread: 0, promotions: 0, all: 0, trash: 0 }, sorting: { enabled: false, pending: 0, delayed: 0 }, nextCursor: null };
 const folderLabels: Record<Folder, string> = { inbox: '받은 메일', verification: '인증 메일', starred: '별표', archive: '보관함', unread: '안 읽은 메일', promotions: '광고와 소식', all: '전체 메일', trash: '휴지통' };
+const folderIcons = { inbox: Inbox, verification: ShieldCheck, starred: Star, archive: Archive, unread: Mail, promotions: Megaphone, all: Mails, trash: Trash2 };
+const folderOptions = Object.entries(folderLabels).map(([key, label]) => {
+  const value = key as Folder; const Icon = folderIcons[value];
+  return { value, label, icon: <Icon size={18} strokeWidth={1.7} />, separator: value === 'all' || value === 'trash' };
+});
 const timeFormat = new Intl.DateTimeFormat('ko-KR', { hour: 'numeric', minute: '2-digit' });
 const dateFormat = new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' });
 const fullDateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'short' });
@@ -382,7 +388,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
       {listError && online && <div className="connection-error" role="alert"><span>{listError}</span><button onClick={() => void refresh()}>다시 시도</button></div>}
       {!online && <div className="connection-error" role="status">오프라인입니다.</div>}
       <section className="mail-list" aria-label="메일 목록" hidden={Boolean(selected)}>
-        <div className="list-heading"><h1 className="sr-only">{folderLabels[folder]}</h1><div className="folder-picker"><select aria-label="메일함" value={folder} onChange={event => chooseFolder(event.target.value as Folder)}>{Object.entries(folderLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><ChevronDown size={17} /></div>
+        <div className="list-heading"><h1 className="sr-only">{folderLabels[folder]}</h1><Select variant="folder" label="메일함" value={folder} options={folderOptions} onChange={value => chooseFolder(value)} />
           <div className="list-tools"><div className="search-field"><Search size={17} /><input ref={searchRef} type="search" aria-label="메일 검색" placeholder="검색" maxLength={SEARCH_LIMIT} value={search} onChange={event => setSearch(event.target.value)} /></div><div className="tool-cluster"><button className="icon-button" aria-label="상세 검색" title="상세 검색" onClick={() => setSearchDialog(true)}><SlidersHorizontal size={17} /></button><button className="icon-button" aria-label={selecting ? '선택 취소' : '메일 선택'} title={selecting ? '선택 취소' : '메일 선택'} aria-pressed={selecting} onClick={() => { setSelecting(value => !value); setChecked(new Set()); }}><ListChecks size={17} /></button><button className={`icon-button ${refreshing ? 'spinning' : ''}`} onClick={() => void refresh()} aria-label="새로고침" title="새로고침" disabled={refreshing}><RefreshCw size={17} /></button></div></div>
         </div>
         {selecting && <div className="bulk-toolbar" aria-label="선택한 메일 작업"><label className="selection-label"><input ref={selectionRef} type="checkbox" disabled={bulkBusy} title={data.messages.length > 100 ? '현재 목록의 첫 100통 선택' : '현재 목록 선택'} aria-label="현재 목록 선택" checked={data.messages.length > 0 && data.messages.slice(0, 100).every(item => checked.has(item.id))} onChange={event => setChecked(new Set(event.target.checked ? data.messages.slice(0, 100).map(item => item.id) : []))} /><span>{checked.size}통</span></label>

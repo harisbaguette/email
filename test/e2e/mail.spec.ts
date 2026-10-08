@@ -92,7 +92,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByLabel('메일 작업', { exact: true }).click();
   await page.getByRole('button', { name: '광고와 소식으로 이동', exact: true }).click();
   await expect(row).toHaveCount(0);
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('promotions');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '광고와 소식', exact: true }).click();
   await expect(row).toBeVisible();
   await row.click();
   await page.getByLabel('메일 작업', { exact: true }).click();
@@ -100,7 +100,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.screenshot({ path: '.local/promotions-desktop.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '광고 아님', exact: true }).click();
   await expect(row).toHaveCount(0);
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('inbox');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '받은 메일', exact: true }).click();
   await expect(row).toBeVisible();
   await row.click();
   await expect(page.getByRole('heading', { name: subject, exact: true })).toBeVisible();
@@ -130,7 +130,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await expect(row).toBeVisible();
   await row.click();
   await page.getByRole('button', { name: '휴지통으로 이동', exact: true }).click();
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('trash');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '휴지통', exact: true }).click();
   await row.click();
   await page.getByRole('button', { name: '영구 삭제', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -148,7 +148,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await expect(page.getByLabel('주소 이름')).toHaveCount(0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${generatedLocal}@bluekite.co.kr`);
   await page.getByRole('button', { name: '수신함', exact: true }).click();
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('inbox');
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '받은 메일', exact: true }).click();
   await expect(row).toBeVisible();
   expect(new URL(page.url()).searchParams.has('address')).toBe(false);
   await page.screenshot({ path: '.local/waiting-mobile.png', animations: 'disabled' });

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'rea
 import { ArrowLeft, Bell, Check, ChevronRight, Copy, LogOut, Mail, Plus, Search, UserRound, X, SlidersHorizontal } from 'lucide-react';
 import type { AddressInfo } from '../shared/types';
 import { ApiError, api, copyText, errorMessage } from './api';
+import { Select } from './Select';
 import { TwoFactor } from './TwoFactor';
 import { Devices, Rules } from './SettingsManagement';
 import { ActionMenu, Modal, formatBytes } from './components';
@@ -178,7 +179,7 @@ function Notifications({ active }: { active: boolean }) {
     finally { finish(); }
   }
   return <><div className="settings-section-heading"><h2>알림</h2></div><div className={`notification-state ${connected ? 'enabled' : ''}`}><span className="notification-symbol"><Bell size={23} /></span><div><h3>이 기기에서 받기</h3><p>{loading && !status ? '연결 확인 중…' : connected ? '연결됨' : unavailable || '앱을 닫아도 새 메일을 알려줍니다.'}</p></div><button className={device ? 'secondary-button' : 'primary-button'} disabled={busy || loading || !status || (Boolean(unavailable) && !device)} onClick={() => void toggle()}>{busy ? '처리 중…' : device ? '끄기' : '켜기'}</button></div>
-    <div className="preference-row"><label htmlFor="notification-mode">알림 받을 메일</label><select id="notification-mode" value={mode} disabled={busy || loading || !status} onChange={event => void update(event.target.value as PushMode, preview)}><option value="verification">인증 메일만</option><option value="inbox">받은 메일 전체</option></select></div>
+    <div className="preference-row"><label htmlFor="notification-mode">알림 받을 메일</label><Select<PushMode> id="notification-mode" value={mode} disabled={busy || loading || !status} onChange={value => void update(value, preview)} options={[{ value: 'verification', label: '인증 메일만' }, { value: 'inbox', label: '받은 메일 전체' }]} /></div>
     <div className="preference-row"><div><span id="preview-label">내용 미리보기</span><p>잠금 화면에 보낸 사람과 제목을 표시합니다.</p></div><button className="toggle" role="switch" aria-labelledby="preview-label" aria-checked={preview} disabled={busy || loading || !status} onClick={() => void update(mode, !preview)}><span /></button></div>
     {error && <div className="settings-error" role="alert"><p>{error}</p>{!status && <button className="text-button" disabled={loading} onClick={() => void load()}>다시 시도</button>}</div>}
     {feedback && <p className="settings-feedback" role="status">{feedback}</p>}

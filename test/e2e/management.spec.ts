@@ -65,7 +65,7 @@ test('bulk star/archive/trash and undo, advanced search and narrow-screen select
   await page.getByRole('button', { name: '검색', exact: true }).click(); await expect(page.locator('.mail-row')).toHaveCount(3);
   await page.locator('.row-open').first().click();
   await page.getByLabel('메일 작업', { exact: true }).click(); await page.getByRole('button', { name: '보관함으로 이동', exact: true }).click();
-  await page.getByRole('combobox', { name: '메일함' }).selectOption('archive'); await expect(page.locator('.mail-row')).toHaveCount(1);
+  await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '보관함', exact: true }).click(); await expect(page.locator('.mail-row')).toHaveCount(1);
 });
 
 test('automatic addresses stay collapsed; promotion, notes, hiding and recipient pause work', async ({ page, context }) => {

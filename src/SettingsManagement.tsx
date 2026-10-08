@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SenderRule, SessionInfo } from '../shared/types';
 import { api, errorMessage } from './api';
 import { ActionMenu, Modal } from './components';
+import { Select } from './Select';
 
 export function Devices({ active }: { active: boolean }) {
   const [items, setItems] = useState<SessionInfo[]>([]);
@@ -60,6 +61,6 @@ export function Rules({ active }: { active: boolean }) {
     {loadError && <div className="settings-error" role="alert"><p>{loadError}</p><button className="text-button" onClick={() => void load()}>다시 시도</button></div>}
     {error && !adding && <p className="form-error" role="alert">{error}</p>}
     {feedback && <div className="rule-feedback" role="status"><span>{feedback}</span>{removed && <button className="text-button" disabled={busy} onClick={() => void save(undefined, removed)}>되돌리기</button>}</div>}
-    {adding && <Modal title={editing ? '자동 정리 규칙 수정' : '자동 정리 규칙'} onClose={() => { if (!busy) setAdding(false); }}><form className="search-options" onSubmit={event => { event.preventDefault(); void save(); }}><label htmlFor="rule-sender">보낸 사람 이메일</label><input id="rule-sender" type="email" required readOnly={editing} value={sender} onChange={event => setSender(event.target.value)} autoFocus={!editing} autoCapitalize="none" spellCheck={false} /><label htmlFor="rule-action">이동할 메일함</label><select id="rule-action" value={action} onChange={event => setAction(event.target.value as SenderRule['action'])} autoFocus={editing}><option value="inbox">받은 메일</option><option value="promotions">광고와 소식</option><option value="trash">휴지통</option></select>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setAdding(false)}>취소</button><button className="primary-button" disabled={busy}>{busy ? '저장 중…' : editing ? '저장' : '추가'}</button></div></form></Modal>}
+    {adding && <Modal title={editing ? '자동 정리 규칙 수정' : '자동 정리 규칙'} onClose={() => { if (!busy) setAdding(false); }}><form className="search-options" onSubmit={event => { event.preventDefault(); void save(); }}><label htmlFor="rule-sender">보낸 사람 이메일</label><input id="rule-sender" type="email" required readOnly={editing} value={sender} onChange={event => setSender(event.target.value)} autoFocus={!editing} autoCapitalize="none" spellCheck={false} /><label htmlFor="rule-action">이동할 메일함</label><Select<SenderRule['action']> id="rule-action" value={action} onChange={setAction} autoFocus={editing} options={[{ value: 'inbox', label: '받은 메일' }, { value: 'promotions', label: '광고와 소식' }, { value: 'trash', label: '휴지통' }]} />{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setAdding(false)}>취소</button><button className="primary-button" disabled={busy}>{busy ? '저장 중…' : editing ? '저장' : '추가'}</button></div></form></Modal>}
   </>;
 }
