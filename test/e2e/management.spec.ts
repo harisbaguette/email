@@ -113,6 +113,7 @@ test('two-factor setup requires saved recovery codes, then login and recovery wo
   let codes:string[]=[]; let enabled=false;
   try {
     await page.goto('/?settings=account');
+    await page.getByText('인증 앱으로 추가 보호', { exact: true }).click();
     await page.locator('.two-factor').getByRole('button', { name:'설정',exact:true }).click();
     await page.getByRole('dialog').getByLabel('현재 비밀번호',{exact:true}).fill(credentials.password);
     const setupResponse = page.waitForResponse(r=>r.url().endsWith('/api/two-factor/setup') && r.status()===200);

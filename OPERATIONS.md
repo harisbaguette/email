@@ -5,6 +5,7 @@
 GitHub의 **Mailroom 운영 감시**가 15분 간격으로 HTTPS, 인증서 만료, DB 연결, 예약 작업과 최근 이상 징후를 확인한다. GitHub 예약 작업은 지연되거나 비활성화될 수 있으므로 실시간 감시를 보장하지 않는다. 저장소 소유자는 GitHub 알림 설정에서 Actions의 실패 알림을 켠다.
 
 - `login_attack`: 로그인한 기기를 확인하고 낯선 기기를 해제한다. 비밀번호를 바꾸고 2단계 인증을 켠다.
+- 패스키가 유출됐거나 등록된 기기를 모두 잃었다면 계정 설정에서 해당 키를 삭제한다. 로그인할 수 없을 때는 `npm run password:reset -- --clear-passkeys`로 비밀번호를 재설정하고 패스키를 해제한다. 이 명령은 인증 앱을 유지한다.
 - `mail_limited`: 설정에서 공격받는 주소의 수신을 중지한다. 기존 메일은 유지된다.
 - `storage_near_limit`, `storage_full`: 필요한 원본을 먼저 내려받은 뒤 불필요한 메일만 직접 삭제한다.
 - `scheduled_jobs_stale`, `cron_error`: Cloudflare의 `bluekite-mail` 예약 실행과 D1 상태를 확인한다.

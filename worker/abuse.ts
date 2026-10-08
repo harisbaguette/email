@@ -64,6 +64,7 @@ export async function receptionStatus(env: Env) {
 export async function cleanSecurityState(env: Env) {
   const now = Date.now();
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM passkey_challenges WHERE expires_at<=?').bind(now),
     env.DB.prepare('DELETE FROM mail_limits WHERE window_start<?').bind(now - 86_400_000),
     env.DB.prepare('DELETE FROM login_attempts WHERE window_start<?').bind(now - 86_400_000),
     env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=? OR last_seen_at<=?)').bind(now, now - 7 * 86_400_000),

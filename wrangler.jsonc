@@ -7,7 +7,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  "dev": { "host": "127.0.0.1", "ip": "127.0.0.1", "port": 8787, "local_protocol": "http" },
+  "dev": { "host": "localhost", "ip": "127.0.0.1", "port": 8787, "local_protocol": "http" },
   "routes": [{ "pattern": "email.bluekite.co.kr", "custom_domain": true }],
   "assets": {
     "directory": "./dist",

@@ -666,6 +666,37 @@
     margin-top: 28px;
     min-height: 48px;
   }
+  .passkey-login {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .passkey-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .passkey-list li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--line);
+  }
+  .passkey-list li > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .passkey-list strong,
+  .passkey-list span {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  .passkey-list span {
+    margin-top: var(--space-1);
+    color: var(--muted);
+    font-size: var(--font-small);
+  }
   .address-search {
     margin-bottom: 10px;
   }
@@ -1197,15 +1228,18 @@
   .account-otp input {
     width: 100%;
   }
-  .account-password {
+  .account-password,
+  .account-factor {
     border-bottom: 1px solid var(--line);
   }
-  .account-password > summary {
+  .account-password > summary,
+  .account-factor > summary {
     justify-content: space-between;
     font-size: 14px;
     font-weight: 600;
   }
-  .account-password[open] > summary svg {
+  .account-password[open] > summary svg,
+  .account-factor[open] > summary svg {
     transform: rotate(90deg);
   }
   .account-password .account-form {

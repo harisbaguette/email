@@ -55,12 +55,12 @@ export function assertSameOrigin(request: Request, env: Env) {
   }
 }
 
-export async function jsonBody(request: Request, allowEmpty = false): Promise<Record<string, unknown>> {
+export async function jsonBody(request: Request, allowEmpty = false, maxBytes = 4096): Promise<Record<string, unknown>> {
   const isJson = request.headers.get('Content-Type')?.startsWith('application/json');
   if (!allowEmpty && !isJson) {
     throw new HttpError(415, '지원하지 않는 요청 형식입니다.');
   }
-  if (Number(request.headers.get('Content-Length')) > 4096) throw new HttpError(413, '입력 내용이 너무 깁니다.');
+  if (Number(request.headers.get('Content-Length')) > maxBytes) throw new HttpError(413, '입력 내용이 너무 깁니다.');
   const reader = request.body?.getReader();
   if (!reader) {
     if (allowEmpty) return {};
@@ -72,7 +72,7 @@ export async function jsonBody(request: Request, allowEmpty = false): Promise<Re
     const { value, done } = await reader.read();
     if (done) break;
     length += value.byteLength;
-    if (length > 4096) { await reader.cancel(); throw new HttpError(413, '입력 내용이 너무 깁니다.'); }
+    if (length > maxBytes) { await reader.cancel(); throw new HttpError(413, '입력 내용이 너무 깁니다.'); }
     chunks.push(value);
   }
   if (!length && allowEmpty) return {};
@@ -137,6 +137,10 @@ export async function login(request: Request, env: Env) {
   const matches = await passwordMatches(password, row.value);
   if (!matches || username.trim() !== (owner?.value || 'owner')) throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
   await verifyTwoFactor(env, code);
+  return completeLogin(request, env, revision, key);
+}
+
+export async function completeLogin(request: Request, env: Env, revision: string, key: string) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash = ? OR ip_hash = 'account' OR window_start < ?").bind(key, Date.now() - 86_400_000),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(Date.now()),

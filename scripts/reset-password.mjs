@@ -22,7 +22,8 @@ const usernameSQL = requested
   ? `INSERT INTO settings (key, value) VALUES ('login_username', '${requested.username}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
   : "INSERT OR IGNORE INTO settings (key, value) VALUES ('login_username', 'owner');";
 const resetFactorSQL = process.argv.includes('--disable-two-factor') ? "DELETE FROM two_factor; DELETE FROM recovery_codes; DELETE FROM two_factor_setups;" : '';
-await writeFile(sqlFile, `INSERT INTO settings (key, value) VALUES ('password_hash', '${hash}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n${usernameSQL}\nINSERT INTO settings (key,value) VALUES ('auth_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT);\nDELETE FROM sessions;\nDELETE FROM push_subscriptions;\nDELETE FROM login_attempts;\n${resetFactorSQL}\n`, { mode: 0o600 });
+const resetPasskeysSQL = process.argv.includes('--clear-passkeys') ? 'DELETE FROM passkeys;' : '';
+await writeFile(sqlFile, `INSERT INTO settings (key, value) VALUES ('password_hash', '${hash}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;\n${usernameSQL}\nINSERT INTO settings (key,value) VALUES ('auth_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT);\nDELETE FROM sessions;\nDELETE FROM push_subscriptions;\nDELETE FROM login_attempts;\nDELETE FROM passkey_challenges;\n${resetFactorSQL}\n${resetPasskeysSQL}\n`, { mode: 0o600 });
 try {
   const result = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'd1', 'execute', 'bluekite-mail', mode, '--file', sqlFile], { encoding: 'utf8' });
   if (result.status !== 0) {

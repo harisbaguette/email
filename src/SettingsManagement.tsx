@@ -22,6 +22,7 @@ export function SecurityHistory() {
     password_changed: '비밀번호 변경',
     mfa_changed: '2단계 인증 변경',
     session_revoked: '기기 로그아웃',
+    passkey_changed: '패스키 변경',
     mail_limited: '대량 수신 차단',
     storage_full: '저장 공간 한도',
     api_error: '연결 오류',

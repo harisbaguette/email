@@ -3,7 +3,7 @@ import { STORAGE_BYTES, STORAGE_MESSAGES } from './abuse';
 import type { Env } from './types';
 
 export type SecurityEvent = 'login_failed' | 'login_succeeded' | 'password_changed' | 'mfa_changed'
-  | 'session_revoked' | 'mail_limited' | 'storage_full' | 'api_error' | 'mail_error' | 'cron_error';
+  | 'passkey_changed' | 'session_revoked' | 'mail_limited' | 'storage_full' | 'api_error' | 'mail_error' | 'cron_error';
 
 export async function recordEvent(env: Env, kind: SecurityEvent, requestId = crypto.randomUUID()) {
   const now = Date.now();

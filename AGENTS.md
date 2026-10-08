@@ -7,6 +7,7 @@
 - `worker/`: HTTP API, 세션 인증, MIME 수신·D1 보관. HTTP로 메일을 집어넣는 운영 엔드포인트는 없다.
 - `worker/sorting.ts`: 저장 뒤 Jev 분류, D1 잠금·일일 요청 제한·장애 재시도. `sorting-policy.ts`의 기준은 `test/sorting-cases.json`으로 검증한다. 자동 분류는 삭제하지 않으며 사용자 분류를 덮어쓰지 않는다.
 - `worker/two-factor.ts`: 인증 앱 TOTP·일회용 복구 코드. 설정 키는 Worker secret `MFA_ENCRYPTION_KEY`로 암호화하며 테스트에서 운영 인증을 켜지 않는다.
+- `worker/passkeys.ts`: WebAuthn 패스키 등록·로그인·삭제. RP/origin·UV·일회용 challenge·보안 변경 시점을 검증한다. 테스트는 로컬 가상 인증기로 하고 운영에 테스트 패스키를 등록하지 않는다.
 - `shared/`: 화면과 API의 공통 타입.
 - `worker/abuse.ts`: API·다운로드 요청 제한과 D1 수신량 예산. 등록한 주소만 수신한다. 저장 한도는 `0006_abuse_protection.sql`의 원자적 트리거와 일치시킨다. 보안 상태 정리는 메일을 삭제하지 않는다.
 - `migrations/`: D1 스키마. 운영 DB는 `bluekite-mail`이다.

@@ -13,6 +13,7 @@ import {
   TextInput,
 } from './ui';
 import { normalizeAuthCode } from '../shared/auth-code';
+import { Passkeys } from './Passkeys';
 import {
   useEffect,
   useLayoutEffect,
@@ -890,7 +891,13 @@ function Account({ onLogout, active }: { onLogout: () => Promise<void>; active: 
           </Button>
         </Notice>
       )}
-      <TwoFactor active={active} onState={setTwoFactor} />
+      <Passkeys active={active} twoFactor={twoFactor} />
+      <Disclosure
+        className="account-factor"
+        summary={<>인증 앱으로 추가 보호{twoFactor ? ' · 켜짐' : ''}</>}
+      >
+        <TwoFactor active={active} onState={setTwoFactor} />
+      </Disclosure>
       <Disclosure className="account-password" summary={<>비밀번호 변경</>}>
         <form className="account-form" onSubmit={save}>
           <div className="password-grid">

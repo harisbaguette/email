@@ -1,4 +1,5 @@
 import PostalMime from 'postal-mime';
+import { listPasskeys, registrationOptions, registerPasskey, authenticationOptions, authenticatePasskey, removePasskey, challengeCookie } from './passkeys';
 import { recordEvent, operationStatus, monitorAuthorized, finishScheduled } from './operations';
 import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor, verifyCurrentPassword } from './two-factor';
 import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie, listSessions, revokeSession, limitLogin, createSession } from './auth';
@@ -14,7 +15,9 @@ import { verificationLink } from './verification';
 import { processNotifications, pushStatus, saveSubscription, testNotification, updateSubscription } from './push';
 
 function json(data: unknown, status = 200, headers?: HeadersInit) {
-  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
+  const result = new Headers(headers);
+  result.set('Content-Type', 'application/json; charset=utf-8');
+  return new Response(JSON.stringify(data), { status, headers: result });
 }
 
 function secured(response: Response): Response {
@@ -48,9 +51,37 @@ async function api(request: Request, env: Env): Promise<Response> {
     const token = await login(request, env);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
   }
+  if (path === '/api/passkeys/login/options' && method === 'POST') {
+    await limitLogin(request, env);
+    await jsonBody(request);
+    const result = await authenticationOptions(request, env);
+    return json(result.options, 200, { 'Set-Cookie': result.cookie });
+  }
+  if (path === '/api/passkeys/login/verify' && method === 'POST') {
+    const token = await authenticatePasskey(request, env, await jsonBody(request, false, 16384));
+    const headers = new Headers();
+    headers.append('Set-Cookie', sessionCookie(request, token));
+    headers.append('Set-Cookie', challengeCookie(request));
+    return json({ ok: true }, 200, headers);
+  }
   const session = await getSession(request, env);
-  if (path === '/api/session' && method === 'GET') return json({ authenticated: Boolean(session), domain: env.MAIL_DOMAIN });
+  if (path === '/api/session' && method === 'GET') return json({ authenticated: Boolean(session), domain: env.MAIL_DOMAIN, passkeysAvailable: Boolean(await env.DB.prepare('SELECT 1 FROM passkeys LIMIT 1').first()) });
   if (!session) throw new HttpError(401, '다시 로그인해 주세요.');
+  if (path === '/api/passkeys' && method === 'GET') return json(await listPasskeys(env, session));
+  if (path === '/api/passkeys/register/options' && method === 'POST') {
+    await limitLogin(request, env, 'security');
+    const result = await registrationOptions(request, env, session, await jsonBody(request));
+    return json(result.options, 200, { 'Set-Cookie': result.cookie });
+  }
+  if (path === '/api/passkeys/register/verify' && method === 'POST') {
+    await registerPasskey(request, env, session, await jsonBody(request, false, 16384));
+    return json({ ok: true }, 200, { 'Set-Cookie': challengeCookie(request) });
+  }
+  if (path.startsWith('/api/passkeys/') && method === 'DELETE') {
+    await limitLogin(request, env, 'security');
+    await removePasskey(request, env, session, path.slice('/api/passkeys/'.length), await jsonBody(request));
+    return json({ ok: true });
+  }
   if (path === '/api/security-events' && method === 'GET') {
     return json({ events: (await env.DB.prepare('SELECT kind,window_start AS at FROM security_events ORDER BY window_start DESC LIMIT 30').all()).results });
   }
@@ -199,7 +230,8 @@ export default {
     try {
       const response = await api(request, env);
       if (response.ok) {
-        if (url.pathname === '/api/login' && request.method === 'POST') await recordEvent(env, 'login_succeeded', requestId);
+        if (['/api/login', '/api/passkeys/login/verify'].includes(url.pathname) && request.method === 'POST') await recordEvent(env, 'login_succeeded', requestId);
+        if ((url.pathname === '/api/passkeys/register/verify' && request.method === 'POST') || (url.pathname.startsWith('/api/passkeys/') && request.method === 'DELETE')) await recordEvent(env, 'passkey_changed', requestId);
         if (url.pathname === '/api/password' && request.method === 'POST') await recordEvent(env, 'password_changed', requestId);
         if (/^\/api\/two-factor\/(confirm|disable)$/.test(url.pathname) && request.method === 'POST') await recordEvent(env, 'mfa_changed', requestId);
         if (url.pathname.startsWith('/api/sessions/') && request.method === 'DELETE') await recordEvent(env, 'session_revoked', requestId);
@@ -211,7 +243,7 @@ export default {
       if (error instanceof HttpError) {
         if ([401, 403, 429].includes(error.status)) console.warn(JSON.stringify({ timestamp: new Date().toISOString(), level: 'warn', event: 'request_denied', status: error.status, requestId }));
         // Rate-limited probes never add database work to the edge limiter path.
-        if (url.pathname === '/api/login' && [400, 401].includes(error.status)) await recordEvent(env, 'login_failed', requestId);
+        if (['/api/login', '/api/passkeys/login/verify'].includes(url.pathname) && [400, 401].includes(error.status)) await recordEvent(env, 'login_failed', requestId);
         return secured(json({ error: error.message }, error.status, { 'X-Request-ID': requestId,
           ...(error.status === 429 ? { 'Retry-After': url.pathname.startsWith('/api/push/') ? '60' : String(error.retryAfter) } : {}) }));
       }

@@ -28,7 +28,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
         ...options.headers,
       },
     });
-    if (response.status === 401 && path !== '/api/login')
+    if (
+      response.status === 401 &&
+      path !== '/api/login' &&
+      !path.startsWith('/api/passkeys/login/')
+    )
       window.dispatchEvent(new Event('session-expired'));
     const body = response.headers.get('Content-Type')?.includes('application/json')
       ? await response.json().catch((error) => {

@@ -151,16 +151,20 @@ function shortTime(time: number) {
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [domain, setDomain] = useState('bluekite.co.kr');
+  const [passkeysAvailable, setPasskeysAvailable] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [sessionAttempt, setSessionAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setSessionError('');
-    api<{ authenticated: boolean; domain: string }>('/api/session', { signal: controller.signal })
+    api<{ authenticated: boolean; domain: string; passkeysAvailable: boolean }>('/api/session', {
+      signal: controller.signal,
+    })
       .then((result) => {
         if (!controller.signal.aborted) {
           setAuthenticated(result.authenticated);
           setDomain(result.domain);
+          setPasskeysAvailable(result.passkeysAvailable);
         }
       })
       .catch((error) => {
@@ -207,6 +211,7 @@ export function App() {
   if (!authenticated)
     return (
       <Login
+        passkeysAvailable={passkeysAvailable}
         initialError={sessionError}
         onLogin={() => {
           setAuthenticated(true);
@@ -214,7 +219,15 @@ export function App() {
         }}
       />
     );
-  return <Mailbox domain={domain} onLogout={() => setAuthenticated(false)} />;
+  return (
+    <Mailbox
+      domain={domain}
+      onLogout={() => {
+        setAuthenticated(null);
+        setSessionAttempt((value) => value + 1);
+      }}
+    />
+  );
 }
 
 function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void }) {
