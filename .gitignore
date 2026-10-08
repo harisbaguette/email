@@ -9,7 +9,15 @@ dist/
 playwright-report/
 test-results/
 .DS_Store
+Thumbs.db
+desktop.ini
+~$*
 *.log
+*.tmp
+__pycache__/
+*.pyc
+.playwright-mcp/
+.serena/
 /.project-map/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
