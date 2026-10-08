@@ -1,7 +1,7 @@
 import { test, expect, type BrowserContext } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
-import { cleanupFixtures } from './helpers';
+import { cleanupFixtures, registerFixtureAddress } from './helpers';
 
 const fixtures: string[] = [];
 const headers = { Origin: 'http://127.0.0.1:8787', 'X-Bluekite-Request': '1' };
@@ -14,6 +14,7 @@ test.beforeEach(async ({ page, context }, info) => {
 });
 test.afterEach(async () => { await cleanupFixtures(fixtures.splice(0)); });
 async function send(context: BrowserContext, local: string, index: number) {
+  await registerFixtureAddress(context.request, local);
   const response = await context.request.post(`/cdn-cgi/handler/email?from=friction@example.net&to=${local}@bluekite.co.kr`, { headers: { 'Content-Type': 'text/plain' }, data: `From: Bluekite Team <friction@example.net>\r\nTo: ${local}@bluekite.co.kr\r\nMessage-ID: <${local}-${index}@example.net>\r\nSubject: Verification ${index}\r\nContent-Type: text/plain\r\n\r\nLogin code: AB12CD. Message ${index}` });
   expect(response.ok()).toBe(true);
 }

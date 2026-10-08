@@ -12,7 +12,7 @@ import { sortingDecision, sortingRequest } from '../worker/sorting-policy';
 import { verificationLink } from '../worker/verification';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
-const testEnv = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) } } as Env;
+const testEnv = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) }, API_LIMITER: { limit: async () => ({ success: true }) }, DOWNLOAD_LIMITER: { limit: async () => ({ success: true }) } } as Env;
 const origin = 'https://email.bluekite.co.kr';
 const password = 'local-test-only-password';
 let cookie = '';
@@ -41,8 +41,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts', 'DELETE FROM sorting_usage'].map(sql => bindings.DB.prepare(sql)));
+  await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM settings', 'DELETE FROM sessions', 'DELETE FROM login_attempts', 'DELETE FROM sorting_usage', 'DELETE FROM mail_limits'].map(sql => bindings.DB.prepare(sql)));
   await bindings.DB.prepare("INSERT INTO settings (key, value) VALUES ('password_hash', ?)").bind(await bcrypt.hash(password, 4)).run();
+  await bindings.DB.prepare("INSERT INTO addresses (address,created_at,managed) VALUES ('pixiv@bluekite.co.kr',0,1),('shop@bluekite.co.kr',0,1)").run();
   const response = await request('/api/login', 'POST', { password }, false);
   expect(response.status).toBe(200);
   cookie = response.headers.get('Set-Cookie')!.split(';')[0];
@@ -221,7 +222,7 @@ describe('private inbox', () => {
     expect((await request('/api/addresses', 'POST', { local: 'bad' }, true, { Origin: 'https://evil.example' })).status).toBe(403);
     expect((await request('/api/addresses', 'POST', { local: 'bad' }, true, { 'X-Bluekite-Request': '' })).status).toBe(403);
     expect((await request('/api/addresses', 'POST', { local: 'a'.repeat(5000) })).status).toBe(413);
-    expect((await bindings.DB.prepare('SELECT COUNT(*) AS n FROM addresses').first<{ n: number }>())!.n).toBe(0);
+    expect((await bindings.DB.prepare('SELECT COUNT(*) AS n FROM addresses').first<{ n: number }>())!.n).toBe(2);
   });
 
   it('rate-limits wrong passwords across worker instances', async () => {
@@ -305,7 +306,7 @@ describe('actual MIME and D1 storage', () => {
     expect(detail.body_text).toContain('가입 확인');
     expect(detail.body_text).not.toContain('evil()');
   });
-  it('receives an unregistered address, preserves the raw mail, and deduplicates retries', async () => {
+  it('receives a registered address, preserves the raw mail, and deduplicates retries', async () => {
     await receiveMail(incoming(simpleRaw), testEnv);
     await receiveMail(incoming(simpleRaw), testEnv);
     const inbox = await (await request('/api/inbox')).json() as any;

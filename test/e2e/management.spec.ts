@@ -2,7 +2,7 @@ import { test, expect, type BrowserContext } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
-import { cleanupFixtures } from './helpers';
+import { cleanupFixtures, registerFixtureAddress, seedPagination } from './helpers';
 
 const fixtures: string[] = [];
 test.beforeEach(async ({ page, context }, info) => {
@@ -15,6 +15,7 @@ test.beforeEach(async ({ page, context }, info) => {
 });
 test.afterEach(async () => { await cleanupFixtures(fixtures.splice(0)); });
 async function send(context: BrowserContext, local: string, index: number) {
+  await registerFixtureAddress(context.request, local);
   const response = await context.request.post(`/cdn-cgi/handler/email?from=management@example.net&to=${local}@bluekite.co.kr`, { headers: { 'Content-Type': 'text/plain' }, data: `From: Example <management@example.net>\r\nTo: ${local}@bluekite.co.kr\r\nMessage-ID: <${local}-${index}@example.net>\r\nSubject: Mail ${index}\r\nContent-Type: text/plain\r\n\r\nLogin code: AB12CD. Unique ${index}` });
   expect(response.ok(), `Local SMTP simulator: ${response.status()} ${await response.text()}`).toBe(true);
 }
@@ -22,7 +23,8 @@ async function send(context: BrowserContext, local: string, index: number) {
 test('live refresh preserves all loaded pages and viewport, including new mail and deleted rows', async ({ page, context }) => {
   test.setTimeout(90000);
   const local = `pagination-${Date.now()}`; fixtures.push(local);
-  for (let i = 0; i < 61; i += 8) await Promise.all(Array.from({ length: Math.min(8, 61 - i) }, (_, n) => send(context, local, i + n)));
+  await send(context, local, 0);
+  await seedPagination(local, 60);
   await page.goto(`/?folder=all&address=${local}@bluekite.co.kr`);
   await expect(page.locator('.mail-row')).toHaveCount(50);
   await page.getByRole('button', { name: '더 보기', exact: true }).click(); await expect(page.locator('.mail-row')).toHaveCount(61);
@@ -68,12 +70,9 @@ test('bulk star/archive/trash and undo, advanced search and narrow-screen select
   await page.getByRole('combobox', { name: '메일함' }).click(); await page.getByRole('option', { name: '보관함', exact: true }).click(); await expect(page.locator('.mail-row')).toHaveCount(1);
 });
 
-test('automatic addresses stay collapsed; promotion, notes, hiding and recipient pause work', async ({ page, context }) => {
+test('registered addresses support notes, hiding and recipient pause', async ({ page, context }) => {
   const local = `auto-${Date.now()}`; fixtures.push(local); const address = `${local}@bluekite.co.kr`;
   await send(context, local, 1); await page.goto('/?settings=addresses');
-  await expect(page.getByRole('button', { name: `${address} 복사`, exact: true })).not.toBeVisible();
-  await page.getByText('자동 수신 주소', { exact: false }).click();
-  await page.getByLabel(`${address} 관리`, { exact: true }).click(); await page.getByRole('button', { name: '내 주소로 추가', exact: true }).click();
   await expect(page.locator('.settings-addresses').getByRole('button', { name: `${address} 복사`, exact: true })).toBeVisible();
   await page.getByLabel(`${address} 관리`, { exact: true }).click(); await page.getByRole('button', { name: '주소 설정', exact: true }).click();
   await page.getByLabel('메모', { exact: true }).fill('개인 인증'); await page.getByRole('button', { name: '저장', exact: true }).click();

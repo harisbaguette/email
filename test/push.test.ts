@@ -40,11 +40,12 @@ beforeAll(async () => {
   clientPublic = await crypto.subtle.exportKey('raw', client.publicKey);
   auth = crypto.getRandomValues(new Uint8Array(16));
   subscription = { endpoint, keys: { p256dh: b64(clientPublic), auth: b64(auth) } };
-  pushEnv = { ...bindings, TYPESAFE_API_KEY: undefined, VAPID_PUBLIC_KEY: b64(await crypto.subtle.exportKey('raw', vapid.publicKey)),
+  pushEnv = { ...bindings, API_LIMITER: { limit: async () => ({ success: true }) } as Env['API_LIMITER'], DOWNLOAD_LIMITER: { limit: async () => ({ success: true }) } as Env['DOWNLOAD_LIMITER'], TYPESAFE_API_KEY: undefined, VAPID_PUBLIC_KEY: b64(await crypto.subtle.exportKey('raw', vapid.publicKey)),
     VAPID_PRIVATE_KEY: (await crypto.subtle.exportKey('jwk', vapid.privateKey)).d! };
 });
 beforeEach(async () => {
-  await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM sessions'].map(sql => bindings.DB.prepare(sql)));
+  await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM sessions', 'DELETE FROM mail_limits'].map(sql => bindings.DB.prepare(sql)));
+  await bindings.DB.prepare("INSERT INTO addresses (address,created_at,managed) VALUES ('hi@bluekite.co.kr',0,1)").run();
   await bindings.DB.prepare('INSERT INTO sessions (token_hash, expires_at, created_at) VALUES (?, ?, ?)').bind(await sha256(token), Date.now() + 3600000, Date.now()).run();
 });
 afterEach(() => vi.unstubAllGlobals());

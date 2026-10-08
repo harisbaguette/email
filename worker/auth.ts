@@ -26,9 +26,9 @@ export async function getSession(request: Request, env: Env): Promise<string | n
     .find(s => s.startsWith(`${name}=`))?.slice(name.length + 1);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const digest = await sha256(token);
-  const row = await env.DB.prepare('SELECT token_hash FROM sessions WHERE token_hash = ? AND expires_at > ?')
-    .bind(digest, Date.now()).first();
-  if (row) await env.DB.prepare('UPDATE sessions SET last_seen_at=? WHERE token_hash=? AND last_seen_at < ?').bind(Date.now(), digest, Date.now() - 300_000).run();
+  const row = await env.DB.prepare('SELECT last_seen_at FROM sessions WHERE token_hash = ? AND expires_at > ?')
+    .bind(digest, Date.now()).first<{ last_seen_at: number }>();
+  if (row && row.last_seen_at < Date.now() - 300_000) await env.DB.prepare('UPDATE sessions SET last_seen_at=? WHERE token_hash=? AND last_seen_at < ?').bind(Date.now(), digest, Date.now() - 300_000).run();
   return row ? digest : null;
 }
 
@@ -91,27 +91,35 @@ export function validatePassword(password: unknown): asserts password is string 
   }
 }
 
-export async function limitLogin(request: Request, env: Env) {
+export async function limitLogin(request: Request, env: Env, scope: 'login' | 'security' = 'login') {
   const ip = request.headers.get('CF-Connecting-IP') || 'local';
-  if (env.LOGIN_LIMITER && !(await env.LOGIN_LIMITER.limit({ key: ip })).success) {
-    throw new HttpError(429, '로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.');
+  if (!(await env.LOGIN_LIMITER.limit({ key: `${scope}:${ip}` })).success) {
+    throw new HttpError(429, '인증 시도가 많습니다. 1분 뒤 다시 시도해 주세요.', 60);
   }
   const now = Date.now();
-  const global = await env.DB.prepare(`INSERT INTO login_attempts (ip_hash,attempts,window_start) VALUES ('account',1,?)
-    ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN window_start < ? THEN 1 ELSE attempts+1 END,
-    window_start=CASE WHEN window_start < ? THEN excluded.window_start ELSE window_start END RETURNING attempts`)
-    .bind(now, now - 900_000, now - 900_000).first<{ attempts: number }>();
-  if (!global || global.attempts > 50) throw new HttpError(429, '로그인 시도가 많습니다. 15분 뒤 다시 시도해 주세요.');
-  const key = await sha256(ip);
+  if (scope === 'login' && await env.DB.prepare("SELECT 1 FROM login_attempts WHERE ip_hash='account' AND attempts>=50 AND window_start>=?").bind(now - 900_000).first()) {
+    throw new HttpError(429, '로그인 시도가 많습니다. 15분 뒤 다시 시도해 주세요.');
+  }
+  const key = await sha256(`${scope}:${ip}`);
   // Persist the attempt window across isolates; the edge limiter alone is per location.
   const attempt = await env.DB.prepare(`
     INSERT INTO login_attempts (ip_hash, attempts, window_start) VALUES (?, 1, ?)
     ON CONFLICT(ip_hash) DO UPDATE SET
       attempts = CASE WHEN window_start < ? THEN 1 ELSE attempts + 1 END,
       window_start = CASE WHEN window_start < ? THEN excluded.window_start ELSE window_start END
-    RETURNING attempts
-  `).bind(key, now, now - 900_000, now - 900_000).first<{ attempts: number }>();
-  if (!attempt || attempt.attempts > 10) throw new HttpError(429, '15분 뒤에 다시 로그인해 주세요.');
+    WHERE window_start < ? OR attempts < 10 RETURNING attempts
+  `).bind(key, now, now - 900_000, now - 900_000, now - 900_000).first<{ attempts: number }>();
+  if (!attempt) throw new HttpError(429, '15분 뒤에 다시 인증해 주세요.');
+  // Already-blocked IPs cannot drain the shared account budget. Authenticated security
+  // settings use a separate budget so a login attack cannot block password/MFA changes.
+  if (scope === 'login') {
+    const global = await env.DB.prepare(`INSERT INTO login_attempts (ip_hash,attempts,window_start) VALUES ('account',1,?)
+      ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN window_start < ? THEN 1 ELSE attempts+1 END,
+      window_start=CASE WHEN window_start < ? THEN excluded.window_start ELSE window_start END
+      WHERE window_start < ? OR attempts < 50 RETURNING attempts`)
+      .bind(now, now - 900_000, now - 900_000, now - 900_000).first();
+    if (!global) throw new HttpError(429, '로그인 시도가 많습니다. 15분 뒤 다시 시도해 주세요.');
+  }
   return key;
 }
 
@@ -135,7 +143,7 @@ export async function login(request: Request, env: Env) {
 }
 
 export async function changePassword(request: Request, env: Env) {
-  await limitLogin(request, env);
+  await limitLogin(request, env, 'security');
   const { currentPassword, newPassword, code } = await jsonBody(request);
   validatePassword(newPassword);
   if (typeof currentPassword !== 'string' || encoder.encode(currentPassword).length > 72) throw new HttpError(400, '현재 비밀번호를 입력해 주세요.');

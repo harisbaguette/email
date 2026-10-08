@@ -3,7 +3,8 @@ import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor } f
 import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie, listSessions, revokeSession, limitLogin, createSession } from './auth';
 import { actionUpdate, bulkMessages, updateAddress, ruleSender, addressQuery } from './management';
 import { getInbox } from './inbox';
-import { getRaw, MAX_EMAIL_BYTES, normalizeAddress, receiveMail } from './mail';
+import { getRaw, MAX_EMAIL_BYTES, MIME_OPTIONS, normalizeAddress, receiveMail } from './mail';
+import { guardApi, guardDownload, receptionStatus, cleanSecurityState } from './abuse';
 import { HttpError, type Env } from './types';
 import { emailDocument, emailHeaders } from './html';
 import { sortMessage, sortPending, sortingStatus } from './sorting';
@@ -33,9 +34,9 @@ async function api(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+  await guardApi(request, env);
   if (method !== 'GET' && method !== 'HEAD') assertSameOrigin(request, env);
   if (path === '/api/health' && method === 'GET') {
-    await env.DB.prepare('SELECT 1 FROM settings LIMIT 1').all();
     return json({ ok: true });
   }
   if (path === '/api/login' && method === 'POST') {
@@ -56,7 +57,7 @@ async function api(request: Request, env: Env): Promise<Response> {
   }
   if (path === '/api/two-factor' && method === 'GET') return json(await twoFactorStatus(env));
   if (path.startsWith('/api/two-factor') && method === 'POST') {
-    await limitLogin(request, env);
+    await limitLogin(request, env, 'security');
     const body = await jsonBody(request);
     if (path === '/api/two-factor/setup') return json(await startTwoFactor(env, session, body.password));
     if (path === '/api/two-factor/confirm') {
@@ -112,7 +113,7 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === '/api/settings' && method === 'GET') {
     const stats = await env.DB.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(stored_size), 0) AS bytes, MAX(received_at) AS lastReceived FROM messages').first();
     const owner = await env.DB.prepare("SELECT value FROM settings WHERE key='login_username'").first<{ value: string }>();
-    return json({ username: owner?.value || 'owner', domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats, sorting: await sortingStatus(env) });
+    return json({ username: owner?.value || 'owner', domain: env.MAIL_DOMAIN, maxEmailBytes: MAX_EMAIL_BYTES, ...stats, sorting: await sortingStatus(env), reception: await receptionStatus(env) });
   }
   const match = path.match(/^\/api\/messages\/([a-f0-9-]{36})(?:\/(raw|body|attachments\/\d+))?$/);
   if (match) {
@@ -124,16 +125,21 @@ async function api(request: Request, env: Env): Promise<Response> {
       return new Response(emailDocument(row.body_html as string, images), { headers: emailHeaders(images) });
     }
     if (action && method === 'GET') {
+      await guardDownload(env, session);
+      const index = Number(action.split('/')[1]);
+      if (action !== 'raw' && (!Number.isSafeInteger(index) || index < 0 || !JSON.parse(row.attachments as string)[index])) {
+        throw new HttpError(404, '첨부 파일을 찾을 수 없습니다.');
+      }
       const raw = await getRaw(env, id);
       if (!raw) throw new HttpError(404, '원본 파일을 찾을 수 없습니다.');
       if (action === 'raw') return new Response(raw, {
         headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${id}.eml"` },
       });
-      const index = Number(action.split('/')[1]);
-      const parsed = await PostalMime.parse(raw);
+      const parsed = await PostalMime.parse(raw, MIME_OPTIONS);
       const attachment = parsed.attachments[index];
       if (!attachment) throw new HttpError(404, '첨부 파일을 찾을 수 없습니다.');
-      const name = (attachment.filename || 'attachment').replace(/[\r\n\x00-\x1f]/g, '').slice(0, 255);
+      const name = new TextDecoder().decode(new TextEncoder().encode((attachment.filename || 'attachment')
+        .replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069/\\]/g, '').slice(0, 255)));
       const content = typeof attachment.content === 'string' ? new TextEncoder().encode(attachment.content).buffer
         : attachment.content instanceof ArrayBuffer ? attachment.content : new Uint8Array(attachment.content).buffer;
       return new Response(content, {
@@ -168,11 +174,14 @@ export default {
     if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
       return Response.redirect(env.PUBLIC_ORIGIN + url.pathname + url.search, 308);
     }
+    if (url.origin !== env.PUBLIC_ORIGIN && !['localhost', '127.0.0.1'].includes(url.hostname)) {
+      return secured(json({ error: '허용되지 않은 주소입니다.' }, 421));
+    }
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     try { return secured(await api(request, env)); }
     catch (error) {
       if (error instanceof HttpError) return secured(json({ error: error.message }, error.status,
-        error.status === 429 ? { 'Retry-After': new URL(request.url).pathname.startsWith('/api/push/') ? '60' : '900' } : undefined));
+        error.status === 429 ? { 'Retry-After': new URL(request.url).pathname.startsWith('/api/push/') ? '60' : String(error.retryAfter) } : undefined));
       console.error(JSON.stringify({ event: 'api_error', error: error instanceof Error ? error.name : 'Error' }));
       return secured(json({ error: '잠시 연결이 원활하지 않습니다. 다시 시도해 주세요.' }, 500));
     }
@@ -185,5 +194,5 @@ export default {
       await processNotifications(env, id);
     })().catch(() => console.warn(JSON.stringify({ event: 'notification_deferred' }))));
   },
-  async scheduled(_event: ScheduledController, env: Env) { await sortPending(env); await processNotifications(env); },
+  async scheduled(_event: ScheduledController, env: Env) { await cleanSecurityState(env); await sortPending(env); await processNotifications(env); },
 } satisfies ExportedHandler<Env>;

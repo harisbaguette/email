@@ -86,6 +86,7 @@ function Addresses({ draft, domain, addresses, createInitially, onCreated, onSel
     </div>);
   }
   return <><div className="settings-section-heading"><h2>이메일 주소</h2>{!creating && <button className="primary-button" onClick={() => { setLocal(randomAddress(addresses)); setCreating(true); setError(''); }}><Plus size={16} />새 주소</button>}</div>
+    <p className="field-hint rule-intro">여기서 만든 주소로만 메일을 받습니다.</p>
     {creating && <form className="address-create" onSubmit={create} aria-label="새 이메일 주소"><label htmlFor="local-part">주소 이름</label><div className="address-field"><input id="local-part" ref={nameRef} value={local} disabled={busy} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={320} required onChange={event => { const value = event.target.value.trim().toLowerCase(); setLocal(value.endsWith('@' + domain) ? value.slice(0, -(domain.length + 1)) : value); setError(''); }} /><span>@{domain}</span></div>
       {existing && <p className="field-hint">{existing.blocked ? '수신을 중지한 주소입니다. 다시 사용하려면 수신을 재개하세요.' : '이미 있는 주소입니다. 그대로 복사해 사용할 수 있습니다.'}</p>}{error && <p className="form-error" role="alert">{error}</p>}<div className="form-actions"><button type="button" className="text-button" disabled={busy} onClick={() => setCreating(false)}>취소</button><button className="primary-button" disabled={busy || !local.trim()}>{busy ? '처리 중…' : existing?.blocked ? '수신 재개하고 복사' : existing ? '주소 복사' : '만들고 복사'}</button></div></form>}
     {fallback && <div className="copy-fallback-area"><label htmlFor="address-copy-value">아래 주소를 선택해 복사할 수 있습니다.</label><input id="address-copy-value" readOnly value={fallback} onFocus={event => event.target.select()} autoFocus /><button className="icon-button" aria-label="복사 안내 닫기" onClick={() => setFallback('')}><X size={16} /></button></div>}
@@ -193,7 +194,7 @@ function Account({ onLogout, active }: { onLogout: () => Promise<void>; active: 
   const [leaving, setLeaving] = useState(false); const [logoutError, setLogoutError] = useState('');
   async function leave() { if (leaving) return; setLeaving(true); setLogoutError(''); try { await onLogout(); } catch (error) { setLogoutError(errorMessage(error)); } finally { setLeaving(false); } }
   const [code, setCode] = useState('');
-  const [stats, setStats] = useState<{ username: string; total: number; bytes: number; maxEmailBytes: number; sorting: { enabled: boolean; pending: number; delayed: number } } | null>(null);
+  const [stats, setStats] = useState<{ username: string; total: number; bytes: number; maxEmailBytes: number; sorting: { enabled: boolean; pending: number; delayed: number }; reception: { storageLimit: number; messageLimit: number; dailyLimit: number; dailyBytesLimit: number; dailyReceived: number; dailyBytes: number; storageFull: boolean } } | null>(null);
   const [current, setCurrent] = useState(''); const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [feedback, setFeedback] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -221,7 +222,9 @@ function Account({ onLogout, active }: { onLogout: () => Promise<void>; active: 
       {error && <p className="form-error" role="alert">{error}</p>}{feedback && <p className="settings-feedback" role="status">{feedback}</p>}<div className="form-actions"><button className="primary-button" disabled={busy}>{busy ? '저장 중…' : '비밀번호 변경'}</button></div></form></details>
     <Devices key={`${twoFactor}-${securityVersion}`} active={active} />
     <dl className="account-storage"><div><dt>보관 중</dt><dd>{stats ? `${stats.total}통 / ${formatBytes(stats.bytes)}` : '…'}</dd></div><div><dt>광고 자동 정리</dt><dd>{!stats ? '…' : !stats.sorting.enabled ? '꺼짐' : stats.sorting.delayed ? `${stats.sorting.delayed}통 재시도 대기` : '켜짐'}</dd></div></dl>
-    <details className="privacy-details"><summary>보관과 개인정보</summary><p>메일은 자동 삭제하지 않습니다. 한 통은 첨부 포함 {stats ? formatBytes(stats.maxEmailBytes) : '10 MB'}까지 받습니다.</p><p>광고 분류에는 Jev를 사용합니다. 링크, 이메일 주소, 긴 숫자를 가린 제목과 본문 일부를 보내며 첨부 파일은 보내지 않습니다.</p></details>
+    {stats?.reception && (stats.bytes >= stats.reception.storageLimit * 0.9 || stats.total >= stats.reception.messageLimit * 0.9) && <p className="form-error" role="alert">저장 공간이 거의 찼습니다. 새 메일을 계속 받으려면 필요 없는 메일을 휴지통에서 영구 삭제해 주세요.</p>}
+    {stats?.reception && (stats.reception.dailyReceived >= stats.reception.dailyLimit || stats.reception.dailyBytes >= stats.reception.dailyBytesLimit) && <p className="form-error" role="alert">대량 수신 보호가 작동 중입니다. 제한이 풀린 뒤 필요한 메일을 다시 요청해 주세요.</p>}
+    <details className="privacy-details"><summary>보관과 개인정보</summary><p>메일은 자동 삭제하지 않습니다. 한 통은 첨부 포함 {stats ? formatBytes(stats.maxEmailBytes) : '10 MB'}까지 받습니다.</p>{stats?.reception && <p>대량 수신을 막기 위해 주소당 분당 20통, 전체 하루 {stats.reception.dailyLimit.toLocaleString()}통·{formatBytes(stats.reception.dailyBytesLimit)}까지 받습니다. 보관 한도는 {formatBytes(stats.reception.storageLimit)}·{stats.reception.messageLimit.toLocaleString()}통이며, 한도를 넘는 새 메일은 거절합니다.</p>}<p>광고 분류에는 Jev를 사용합니다. 링크, 이메일 주소, 긴 숫자를 가린 제목과 본문 일부를 보내며 첨부 파일은 보내지 않습니다.</p></details>
     <div className="settings-bottom"><button className="text-button logout-button" disabled={leaving} onClick={() => void leave()}><LogOut size={16} />{leaving ? '로그아웃 중…' : '이 기기에서 로그아웃'}</button></div>{logoutError && <p className="form-error" role="alert">{logoutError}</p>}
   </>;
 }

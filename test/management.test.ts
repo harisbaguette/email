@@ -14,13 +14,14 @@ import { searchFields, searchQuery, validSearchDate, SEARCH_LIMIT } from '../sha
 import type { Env } from '../worker/types';
 
 const bindings = env as unknown as Env & { TEST_MIGRATIONS: Parameters<typeof applyD1Migrations>[1] };
-const testEnv: Env = { ...bindings, LOGIN_LIMITER: { limit: async () => ({ success: true }) } as Env['LOGIN_LIMITER'], MFA_ENCRYPTION_KEY: btoa('x'.repeat(32)) };
+const testEnv: Env = { ...bindings, API_LIMITER: { limit: async () => ({ success: true }) } as Env['API_LIMITER'], DOWNLOAD_LIMITER: { limit: async () => ({ success: true }) } as Env['DOWNLOAD_LIMITER'], LOGIN_LIMITER: { limit: async () => ({ success: true }) } as Env['LOGIN_LIMITER'], MFA_ENCRYPTION_KEY: btoa('x'.repeat(32)) };
 const origin = 'https://email.bluekite.co.kr'; const password = 'management-test-password';
 let cookie = '';
 async function request(path: string, method = 'GET', body?: unknown, source = origin, customCookie = cookie) {
   return worker.fetch(new Request(origin + path, { method, headers: { Origin: source, Cookie: customCookie, 'Content-Type': 'application/json', 'X-Bluekite-Request': '1', 'CF-Connecting-IP': '192.0.2.40' }, body: body === undefined ? undefined : JSON.stringify(body) }), testEnv);
 }
 async function mail(text: string, to = 'test@bluekite.co.kr', sender = 'sender@example.net', html = false) {
+  await bindings.DB.prepare('INSERT OR IGNORE INTO addresses (address,created_at,managed) VALUES (?,0,1)').bind(to).run();
   const raw = new TextEncoder().encode(`From: ${sender}\r\nSubject: Test\r\nContent-Type: text/${html ? 'html' : 'plain'}; charset=utf-8\r\n\r\n${text}`);
   const reject = vi.fn();
   const id = await receiveMail({ from: sender, to, rawSize: raw.length, raw: new Blob([raw]).stream(), headers: new Headers(), setReject: reject } as unknown as ForwardableEmailMessage, testEnv);
@@ -28,7 +29,7 @@ async function mail(text: string, to = 'test@bluekite.co.kr', sender = 'sender@e
 }
 beforeAll(() => applyD1Migrations(bindings.DB, bindings.TEST_MIGRATIONS));
 beforeEach(async () => {
-  await bindings.DB.batch(['push_deliveries','push_subscriptions','messages','addresses','sender_rules','sessions','login_attempts','settings','two_factor','two_factor_setups','recovery_codes'].map(table => bindings.DB.prepare(`DELETE FROM ${table}`)));
+  await bindings.DB.batch(['push_deliveries','push_subscriptions','messages','addresses','sender_rules','sessions','login_attempts','settings','two_factor','two_factor_setups','recovery_codes','mail_limits'].map(table => bindings.DB.prepare(`DELETE FROM ${table}`)));
   await bindings.DB.prepare("INSERT INTO settings VALUES ('password_hash',?)").bind(await bcrypt.hash(password, 4)).run();
   cookie = `__Host-bluekite_session=${await createSession(testEnv)}`;
 });
@@ -42,11 +43,11 @@ describe('mail management and security boundaries', () => {
   it('rejects private and local verification shortcut destinations', () => {
     for (const url of ['https://127.0.0.1/', 'https://2130706433/', 'https://[::1]/', 'https://localhost/', 'https://router.local/', 'https://intranet/']) expect(verificationLink('', '', `<a href="${url}">Verify your email</a>`)).toBeNull();
   });
-  it('separates automatic and managed addresses, preserves hidden state, and rejects disabled recipients', async () => {
+  it('preserves registered addresses and hidden state, and rejects disabled recipients', async () => {
     await mail('hello');
     expect((await request('/api/addresses', 'GET', undefined, origin, '')).status).toBe(401);
     expect((await (await request('/api/addresses')).json() as any).addresses).toHaveLength(1);
-    let item = (await (await request('/api/inbox')).json() as any).addresses[0]; expect(item.managed).toBe(0);
+    let item = (await (await request('/api/inbox')).json() as any).addresses[0]; expect(item.managed).toBe(1);
     expect((await request('/api/addresses','POST',{ local:'test' })).status).toBe(200);
     expect((await request('/api/addresses','PATCH',{ address:'test@bluekite.co.kr', label:'개인', hidden:true })).status).toBe(200);
     await mail('second');

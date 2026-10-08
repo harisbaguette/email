@@ -2,6 +2,7 @@ import sanitizeHtml from 'sanitize-html';
 
 export function emailDocument(html: string, allowImages: boolean) {
   const clean = sanitizeHtml(html, {
+    nestingLimit: 64,
     // Email templates use stylesheet classes for verification buttons. This document is
     // isolated by iframe sandbox and CSP: no scripts, external stylesheets, forms or navigation of the parent.
     allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'center', 'font', 'style'],

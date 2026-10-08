@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
-import { cleanupFixtures } from './helpers';
+import { cleanupFixtures, registerFixtureAddress } from './helpers';
 
 const fixtures: string[] = [];
 test.afterEach(async () => { await cleanupFixtures(fixtures.splice(0)); });
@@ -11,6 +11,7 @@ test('unread is home; sender identity and recipient chips stay clear across scre
   const credentials = JSON.parse(await readFile('.local/local-access.json', 'utf8'));
   expect((await context.request.post('/api/login', { headers, data: credentials })).ok()).toBe(true);
   const local = `chip-${Date.now()}`; fixtures.push(local);
+  await registerFixtureAddress(context.request, local);
   for (let i = 0; i < 2; i++) {
     expect((await context.request.post(`/cdn-cgi/handler/email?from=accounts@example.net&to=${local}@bluekite.co.kr`, {
       headers: { 'Content-Type': 'text/plain' },
