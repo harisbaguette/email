@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, context }, info) => {
 test('folder menu supports keyboard selection, cancellation, focus return and all folders', async ({ page }) => {
   const trigger = page.getByRole('combobox', { name: '메일함', exact: true });
   await trigger.focus(); await page.keyboard.press('Enter');
-  await expect(page.getByRole('option', { name: '받은 메일', exact: true })).toBeFocused();
+  await expect(page.getByRole('option', { name: '안 읽은 메일', exact: true })).toBeFocused();
   await page.screenshot({ path: '.local/dropdowns-desktop.png', animations: 'disabled' });
   expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
   await page.keyboard.press('End'); await expect(page.getByRole('option', { name: '휴지통', exact: true })).toBeFocused(); await page.keyboard.press('Enter');

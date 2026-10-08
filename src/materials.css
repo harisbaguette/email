@@ -1,4 +1,4 @@
-/* Bluekite materials. Layout and responsive task flows remain in styles.css. */
+/* Mailroom materials. Layout and responsive task flows remain in styles.css. */
 @layer base {
   :root {
     --text: #24314a;
@@ -35,7 +35,18 @@
 }
 
 @layer components {
-  .brand { color: #22304a; }
+  .brand { color: #22304a; letter-spacing: -.8px; }
+  .brand-home { flex-shrink: 0; }
+  .app-actions { margin-left: auto; }
+  .app-actions .select-trigger.folder-picker { min-height: 44px; padding: 10px 14px; gap: 8px; font-size: 14px; font-weight: 550; letter-spacing: -.2px; }
+  .workspace { margin-top: 10px; }
+  .list-tools { width: 100%; }
+  .list-tools .search-field { flex: 1; min-width: 0; }
+  .list-tools .search-field input { width: 100%; }
+  .recipient-tone-0 { color: #3f5b8b; background: #edf2fc; border-color: #dfe7f5; }
+  .recipient-tone-1 { color: #436957; background: #edf5f0; border-color: #dceae1; }
+  .recipient-tone-2 { color: #6a517f; background: #f3eff8; border-color: #e8e0f0; }
+  .recipient-tone-3 { color: #765d3e; background: #f7f1e9; border-color: #ede3d6; }
   .brand-symbol { filter: drop-shadow(0 2px 2px #4166ca16); }
   .icon-button, .text-button, .primary-button, .secondary-button, .danger-button, .row-code {
     transition: background .18s, border-color .18s, box-shadow .18s, color .18s, transform .18s var(--ease);
@@ -175,7 +186,15 @@
 
 @layer responsive {
   @media (max-width: 600px) {
-    .select-trigger.folder-picker { font-size: 18px; min-height: 46px; }
+    .app-header { gap: 10px; }
+    .app-header .brand { gap: 5px; font-size: 19px; }
+    .app-actions { gap: 8px; }
+    .app-actions .select-trigger.folder-picker { min-height: 44px; padding: 10px 12px; font-size: 14px; }
+    .app-actions .select-value-icon { display: none; }
+    .app-actions .settings-entry { width: 44px; min-height: 44px; padding: 0; }
+    .app-actions .settings-entry > span { display: none; }
+    .workspace { margin-top: 8px; }
+    .app-header .brand-wordmark { font-size: 18px; }
     .preference-row .select-trigger { gap: 8px; padding: 10px; }
     .list-tools { gap: 8px; }
     .tool-cluster { gap: 0; padding: 3px; }
@@ -197,6 +216,7 @@
     .login-card { padding: 30px 25px; border-radius: 24px; }
     .bulk-toolbar { border-radius: 18px; }
   }
+  @media (max-width: 359px) { .app-header .brand-wordmark { display: none; } }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
     :root { --glass: #f8faff; --glass-edge: #c6d0e0; }
     body { background: #f1f4f8; }

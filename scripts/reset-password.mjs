@@ -31,7 +31,7 @@ try {
     const location = mode === '--remote' ? 'https://email.bluekite.co.kr' : 'http://127.0.0.1:8787';
     const filename = mode === '--remote' ? '.local/접속정보.txt' : '.local/local-access.json';
     await writeFile(filename, mode === '--remote'
-      ? `Bluekite Mail\n\n주소: ${location}\n아이디: ${username}\n비밀번호: ${password}\n\n로그인 후 설정에서 비밀번호를 바꿀 수 있습니다.\n`
+      ? `Mailroom\n\n주소: ${location}\n아이디: ${username}\n비밀번호: ${password}\n\n로그인 후 설정에서 비밀번호를 바꿀 수 있습니다.\n`
       : JSON.stringify({ url: location, username, password }), { mode: 0o600 });
     await chmod(filename, 0o600);
     console.log(`비밀번호 설정 완료. 접속 정보: ${filename}`);

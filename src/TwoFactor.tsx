@@ -27,8 +27,8 @@ export function TwoFactor({ active, onState }: { active: boolean; onState: (enab
     finally { setBusy(false); }
   }
   function download() {
-    const blob = new Blob([`Bluekite 복구 코드\n각 코드는 한 번만 사용할 수 있습니다. 안전한 곳에 보관하세요.\n\n${setup!.recoveryCodes.join('\n')}\n`], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'bluekite-recovery-codes.txt'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const blob = new Blob([`Mailroom 복구 코드\n각 코드는 한 번만 사용할 수 있습니다. 안전한 곳에 보관하세요.\n\n${setup!.recoveryCodes.join('\n')}\n`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'mailroom-recovery-codes.txt'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   let qr = '';
   if (setup) { const image = qrcode(0, 'M'); image.addData(setup.uri); image.make(); qr = image.createDataURL(4, 16); }

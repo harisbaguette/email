@@ -53,7 +53,7 @@ test('settings on desktop and mobile; simulated subscription, push display and n
   const sw = context.serviceWorkers()[0];
   // Simulate the browser's decrypted push delivery, not a real mobile push service.
   await sw.evaluate(async () => {
-    const event = new (self as any).PushEvent('push', { data: JSON.stringify({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: '/?settings=notifications', tag: 'e2e-push' }) });
+    const event = new (self as any).PushEvent('push', { data: JSON.stringify({ title: '인증 메일 도착', body: 'Mailroom에서 확인할 수 있습니다.', url: '/?settings=notifications', tag: 'e2e-push' }) });
     const work: Promise<unknown>[] = [];
     event.waitUntil = (promise: Promise<unknown>) => work.push(promise);
     self.dispatchEvent(event);
@@ -61,7 +61,7 @@ test('settings on desktop and mobile; simulated subscription, push display and n
   });
   await expect.poll(() => sw.evaluate(async () => (await (self as any).registration.getNotifications({ tag: 'e2e-push' })).length)).toBe(1);
   const displayed = await sw.evaluate(async () => { const item = (await (self as any).registration.getNotifications({ tag: 'e2e-push' }))[0]; return { title: item.title, body: item.body, url: item.data.url }; });
-  expect(displayed).toEqual({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: '/?settings=notifications' });
+  expect(displayed).toEqual({ title: '인증 메일 도착', body: 'Mailroom에서 확인할 수 있습니다.', url: '/?settings=notifications' });
   await page.getByRole('button', { name: '계정', exact: true }).click();
   await sw.evaluate(async () => { const item = (await (self as any).registration.getNotifications({ tag: 'e2e-push' }))[0]; self.dispatchEvent(new (self as any).NotificationEvent('notificationclick', { notification: item })); });
   await expect(page).toHaveURL(/settings=notifications/);

@@ -15,6 +15,8 @@ test('branded login, installability, native installation and private offline beh
   expect(manifestResult.errors).toEqual([]);
   const manifest = JSON.parse(manifestResult.data!);
   expect(manifest.display).toBe('standalone');
+  expect(manifest.name).toBe('Mailroom');
+  await expect(page).toHaveTitle('Mailroom');
   expect(manifest.icons.some((icon: any) => icon.sizes === '192x192')).toBeTruthy();
   expect(manifest.icons.some((icon: any) => icon.sizes === '512x512' && icon.purpose.includes('maskable'))).toBeTruthy();
   expect((await cdp.send('Page.getInstallabilityErrors')).installabilityErrors).toEqual([]);
@@ -31,7 +33,7 @@ test('branded login, installability, native installation and private offline beh
   await page.getByLabel('아이디', { exact: true }).fill(credentials.username);
   await page.getByLabel('비밀번호', { exact: true }).fill(credentials.password);
   await page.getByRole('button', { name: '로그인', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '안 읽은 메일', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '앱 설치', exact: true })).toHaveCount(0);
   const cached = await page.evaluate(async () => {
     const names = await caches.keys();
@@ -45,6 +47,6 @@ test('branded login, installability, native installation and private offline beh
   await expect(page.getByRole('heading', { name: '잠시 연결을 기다리는 중입니다' })).toBeVisible();
   await context.setOffline(false);
   await page.getByRole('link', { name: '수신함 다시 열기' }).click();
-  await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '안 읽은 메일', exact: true })).toBeVisible();
   expect(missing).toEqual([]);
 });

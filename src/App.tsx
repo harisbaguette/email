@@ -25,7 +25,7 @@ const fullDateFormat = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', tim
 function initialLocation() {
   const params = new URLSearchParams(location.search);
   const folder = params.get('folder');
-  return { folder: (folder && ['verification', 'starred', 'archive', 'unread', 'promotions', 'all', 'trash'].includes(folder) ? folder : 'inbox') as Folder,
+  return { folder: (folder && ['inbox', 'verification', 'starred', 'archive', 'unread', 'promotions', 'all', 'trash'].includes(folder) ? folder : 'unread') as Folder,
     settings: (['addresses', 'notifications', 'account', 'rules'].includes(params.get('settings') || '') ? params.get('settings') : params.has('new-address') ? 'addresses' : null) as SettingsTab | null,
     address: params.get('address') || '', query: params.get('q') || '', selected: params.get('message') || null };
 }
@@ -134,7 +134,7 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     const next = { ...currentView.current, ...changes };
     currentView.current = next;
     const params = new URLSearchParams();
-    if (next.folder !== 'inbox') params.set('folder', next.folder);
+    if (next.folder !== 'unread') params.set('folder', next.folder);
     if (next.address) params.set('address', next.address);
     if (next.query) params.set('q', next.query);
     if (next.selected) params.set('message', next.selected);
@@ -380,15 +380,15 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
     catch { setCopyFallback({ value, label: '인증번호' }); }
   }
   return <div className="mail-app">
-    <header className="app-header"><button className="brand-home" onClick={() => chooseFolder('inbox', '', true)} aria-label="받은 메일로 이동"><Brand /></button>
-      <div className="app-actions">{!settings && <button className="text-button settings-entry" onClick={() => { settingsScroll.current = window.scrollY; navigate({ settings: 'addresses' }, true); }} aria-label="설정"><Settings size={18} />설정</button>}</div>
+    <header className="app-header"><button className="brand-home" onClick={() => chooseFolder('unread', '', true)} aria-label="안 읽은 메일로 이동"><Brand /></button>
+      <div className="app-actions">{!settings && <><Select variant="folder" label="메일함" value={folder} options={folderOptions} onChange={value => chooseFolder(value)} /><button className="text-button settings-entry" onClick={() => { settingsScroll.current = window.scrollY; navigate({ settings: 'addresses' }, true); }} aria-label="설정"><Settings size={18} /><span>설정</span></button></>}</div>
     </header>
     {settings && <SettingsPage draft={addressDraft} loading={addressesLoading} error={addressesError} onRetry={() => void refreshAddresses()} domain={domain} addresses={data.addresses} tab={settings} createInitially={new URLSearchParams(location.search).has('new-address')} onTab={tab => navigate({ settings: tab })} onClose={() => { if (history.state?.settingsPage) history.back(); else navigate({ settings: null }); }} onCreated={() => void refreshAddresses()} onSelect={value => chooseFolder('all', value, true)} onLogout={async () => { await logout(); onLogout(); }} />}
     <main hidden={Boolean(settings)} className={`workspace ${selected ? 'detail-open' : ''}`}>
       {listError && online && <div className="connection-error" role="alert"><span>{listError}</span><button onClick={() => void refresh()}>다시 시도</button></div>}
       {!online && <div className="connection-error" role="status">오프라인입니다.</div>}
       <section className="mail-list" aria-label="메일 목록" hidden={Boolean(selected)}>
-        <div className="list-heading"><h1 className="sr-only">{folderLabels[folder]}</h1><Select variant="folder" label="메일함" value={folder} options={folderOptions} onChange={value => chooseFolder(value)} />
+        <div className="list-heading"><h1 className="sr-only">{folderLabels[folder]}</h1>
           <div className="list-tools"><div className="search-field"><Search size={17} /><input ref={searchRef} type="search" aria-label="메일 검색" placeholder="검색" maxLength={SEARCH_LIMIT} value={search} onChange={event => setSearch(event.target.value)} /></div><div className="tool-cluster"><button className="icon-button" aria-label="상세 검색" title="상세 검색" onClick={() => setSearchDialog(true)}><SlidersHorizontal size={17} /></button><button className="icon-button" aria-label={selecting ? '선택 취소' : '메일 선택'} title={selecting ? '선택 취소' : '메일 선택'} aria-pressed={selecting} onClick={() => { setSelecting(value => !value); setChecked(new Set()); }}><ListChecks size={17} /></button><button className={`icon-button ${refreshing ? 'spinning' : ''}`} onClick={() => void refresh()} aria-label="새로고침" title="새로고침" disabled={refreshing}><RefreshCw size={17} /></button></div></div>
         </div>
         {selecting && <div className="bulk-toolbar" aria-label="선택한 메일 작업"><label className="selection-label"><input ref={selectionRef} type="checkbox" disabled={bulkBusy} title={data.messages.length > 100 ? '현재 목록의 첫 100통 선택' : '현재 목록 선택'} aria-label="현재 목록 선택" checked={data.messages.length > 0 && data.messages.slice(0, 100).every(item => checked.has(item.id))} onChange={event => setChecked(new Set(event.target.checked ? data.messages.slice(0, 100).map(item => item.id) : []))} /><span>{checked.size}통</span></label>
@@ -425,8 +425,8 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
         {messageError ? <div className="detail-error" role="alert"><p>{messageError}</p><button className="secondary-button" onClick={() => setMessageVersion(v => v + 1)}>다시 시도</button></div>
           : !message ? <div className="list-loading" role="status">불러오는 중…</div>
           : <><div className="message-header"><h2>{message.subject}</h2>
-            <div className="message-meta"><details className="sender-details"><summary>{message.sender_name || message.sender_address}<ChevronDown size={14} /></summary><dl><dt>보낸 사람</dt><dd>{message.sender_address}</dd><dt>받는 사람</dt><dd>{message.recipient}</dd><dt>날짜</dt><dd>{fullDateFormat.format(message.received_at)}</dd></dl></details><time dateTime={new Date(message.received_at).toISOString()}>{shortTime(message.received_at)}</time></div>
-            <button className="recipient-copy" onClick={() => void copy(message.recipient)} title="주소 복사">{message.recipient}<Copy size={13} /></button>
+            <div className="message-meta"><details className="sender-details"><summary><span className="sender-identity"><strong>{message.sender_name || message.sender_address}</strong>{message.sender_name && message.sender_name !== message.sender_address && <span className="sender-email">{message.sender_address}</span>}</span><ChevronDown size={14} /></summary><dl><dt>보낸 사람</dt><dd>{message.sender_address}</dd><dt>받는 사람</dt><dd>{message.recipient}</dd><dt>날짜</dt><dd>{fullDateFormat.format(message.received_at)}</dd></dl></details><time dateTime={new Date(message.received_at).toISOString()}>{shortTime(message.received_at)}</time></div>
+            <button className="recipient-copy" onClick={() => void copy(message.recipient)} aria-label={`${message.recipient} 복사`} title="받는 주소 복사"><RecipientChip address={message.recipient} /><Copy size={13} /></button>
           </div>
           {(code || message.verification_link) && <div className="verification-actions">{code && <button className="verification-code" aria-label="인증번호 복사" title="인증번호 복사" onClick={() => void copyCode(code)}><strong>{code}</strong><span><Copy size={16} />복사</span></button>}
             {message.verification_link && <a className="verification-link" href={message.verification_link.url} onClick={event => {
@@ -451,7 +451,12 @@ function Mailbox({ domain, onLogout }: { domain: string; onLogout: () => void })
 
 function MailRow({ item, onClick, onCopyCode, selecting, checked, onCheck }: { selecting: boolean; checked: boolean; onCheck: () => void; item: MessageSummary; onClick: () => void; onCopyCode: () => void }) {
   return <article className={`mail-row ${item.is_read ? '' : 'unread'} ${selecting ? 'selecting' : ''} ${checked ? 'is-selected' : ''}`} data-message-id={item.id}>{selecting && <label className="row-selection"><input type="checkbox" aria-label={`${item.subject} 선택`} checked={checked} onChange={onCheck} /></label>}<button className="row-open" onClick={onClick}>
-    <span className="row-identity"><span className="row-sender">{!item.is_read && <span className="unread-dot" />}{Boolean(item.is_starred) && <Star size={12} className="starred" fill="currentColor" />}{item.sender_name || item.sender_address}</span><span className="row-recipient" title={item.recipient}>{item.recipient}</span></span>
-    <span className="row-subject">{item.subject}{item.attachments.length > 0 && <Paperclip size={13} aria-label="첨부 파일 있음" />}</span>
+    <span className="row-identity"><span className="row-sender" title={item.sender_name || item.sender_address}>{!item.is_read && <span className="unread-dot" />}{Boolean(item.is_starred) && <Star size={12} className="starred" fill="currentColor" />}{item.sender_name || item.sender_address}</span>{item.sender_name && item.sender_name !== item.sender_address && <span className="row-sender-address">{item.sender_address}</span>}</span>
+    <span className="row-content"><span className="row-subject">{item.subject}{item.attachments.length > 0 && <Paperclip size={13} aria-label="첨부 파일 있음" />}</span><RecipientChip address={item.recipient} /></span>
   </button>{item.verification_code ? <button className="row-code" onClick={onCopyCode} aria-label={`${item.subject} 인증번호 복사`} title="인증번호 복사"><span>{item.verification_code}</span><Copy size={14} /></button> : <span className="row-code-spacer" />}<time className="row-time" dateTime={new Date(item.received_at).toISOString()}>{shortTime(item.received_at)}</time></article>;
+}
+
+function RecipientChip({ address }: { address: string }) {
+  const tone = [...address].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 0) % 4;
+  return <span className={`row-recipient recipient-tone-${tone}`} title={`받는 사람: ${address}`}><span className="recipient-label">받는</span><span className="recipient-address">{address}</span></span>;
 }

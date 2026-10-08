@@ -1,4 +1,4 @@
-# Bluekite Mail
+# Mailroom
 
 개인용 수신 전용 메일함. 프런트엔드는 `email.bluekite.co.kr`, 메일 주소는 `*@bluekite.co.kr`이다.
 

@@ -62,7 +62,7 @@ export function notificationFor(mail: Mail, sub: Pick<Subscription, 'mode' | 'pr
   if (!verification && mail.category_source === 'pending') return null;
   return {
     title: sub.preview ? (mail.sender_name || mail.sender_address).slice(0, 80) : verification ? '인증 메일 도착' : '새 메일 도착',
-    body: sub.preview ? mail.subject.slice(0, 150) : 'Bluekite에서 확인할 수 있습니다.',
+    body: sub.preview ? mail.subject.slice(0, 150) : 'Mailroom에서 확인할 수 있습니다.',
     url: `/?message=${mail.id}`, tag: mail.id,
   };
 }
@@ -86,7 +86,7 @@ export async function testNotification(env: Env, id: string) {
     throw new HttpError(exists ? 429 : 404, exists ? '1분 후 다시 확인해 주세요.' : '이 기기의 알림을 다시 연결해 주세요.');
   }
   let status = 0;
-  try { status = await send(env, sub, { title: 'Bluekite', body: '이 기기의 알림이 연결되었습니다.', url: '/?settings=notifications', tag: 'bluekite-connection' }); }
+  try { status = await send(env, sub, { title: 'Mailroom', body: '이 기기의 알림이 연결되었습니다.', url: '/?settings=notifications', tag: 'bluekite-connection' }); }
   catch { throw new HttpError(503, '알림을 보내지 못했습니다. 다시 시도해 주세요.'); }
   if (status === 404 || status === 410) throw new HttpError(410, '알림 연결이 만료되었습니다. 다시 켜 주세요.');
   if (status < 200 || status >= 300) throw new HttpError(503, '알림을 보내지 못했습니다. 다시 시도해 주세요.');

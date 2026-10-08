@@ -121,7 +121,7 @@ test('two-factor setup requires saved recovery codes, then login and recovery wo
     await expect(page.getByRole('img',{name:'인증 앱 등록 QR 코드'})).toBeVisible();
     await expect(page.getByRole('button',{name:'인증 켜기',exact:true})).toBeDisabled();
     const download = page.waitForEvent('download'); await page.getByRole('button',{name:'복구 코드 다운로드',exact:true}).click();
-    expect((await download).suggestedFilename()).toBe('bluekite-recovery-codes.txt');
+    expect((await download).suggestedFilename()).toBe('mailroom-recovery-codes.txt');
     await page.getByRole('checkbox',{name:'복구 코드를 안전한 곳에 저장했습니다.'}).check();
     await page.getByLabel('인증 앱의 6자리 코드',{exact:true}).fill(otp(setup.secret));
     await page.getByRole('button',{name:'인증 켜기',exact:true}).click();

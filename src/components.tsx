@@ -4,7 +4,7 @@ import { ApiError, api, errorMessage } from './api';
 import { normalizeAuthCode } from '../shared/auth-code';
 
 export function Brand() {
-  return <div className="brand" aria-label="Bluekite Mail"><img className="brand-symbol" src="/brand/symbol.svg" alt="" width="42" height="42" /><span>bluekite</span></div>;
+  return <div className="brand" aria-label="Mailroom"><img className="brand-symbol" src="/brand/symbol.svg" alt="" width="42" height="42" /><span className="brand-wordmark">mailroom</span></div>;
 }
 
 export function Login({ onLogin, initialError }: { onLogin: () => void; initialError?: string }) {

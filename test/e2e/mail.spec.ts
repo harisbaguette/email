@@ -21,7 +21,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByLabel('아이디', { exact: true }).fill(username);
   await page.getByLabel('비밀번호', { exact: true }).fill(password);
   await page.getByRole('button', { name: '로그인', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '안 읽은 메일', exact: true })).toBeVisible();
 
   await expect(page.getByRole('button', { name: '새 주소', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '설정', exact: true }).click();
@@ -34,7 +34,7 @@ test('private inbox: create address, receive MIME, read, search, download, resto
   await page.getByRole('button', { name: '만들고 복사' }).click();
   await expect(page.getByLabel('주소 이름')).toHaveCount(0);
   await page.getByRole('button', { name: '수신함', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '받은 메일', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '안 읽은 메일', exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.has('address')).toBe(false);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${local}@bluekite.co.kr`);
 

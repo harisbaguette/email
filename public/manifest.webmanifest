@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Bluekite Mail",
-  "short_name": "Bluekite",
+  "name": "Mailroom",
+  "short_name": "Mailroom",
   "description": "수신 전용 이메일",
   "lang": "ko",
   "start_url": "/",

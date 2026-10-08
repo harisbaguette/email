@@ -30,7 +30,7 @@ test('folder errors never show messages from the previous folder', async ({ page
   const message = { id: '00000000-0000-4000-8000-000000000001', recipient: 'hi@bluekite.co.kr', sender_name: '받은 메일 발신자', sender_address: 'sender@example.net', subject: '원래 수신함의 메일', is_read: 0, received_at: Date.now(), attachments: [], verification_code: null };
   await context.route('**/api/inbox?**', route => {
     const folder = new URL(route.request().url()).searchParams.get('folder');
-    return folder === 'inbox' ? route.fulfill({ json: { ...data, messages: [message] } }) : route.fulfill({ status: 503, json: { error: '연결을 확인해 주세요.' } });
+    return folder === 'unread' ? route.fulfill({ json: { ...data, messages: [message] } }) : route.fulfill({ status: 503, json: { error: '연결을 확인해 주세요.' } });
   });
   await page.getByRole('button', { name: '새로고침', exact: true }).click();
   await expect(page.getByText(message.subject)).toBeVisible();

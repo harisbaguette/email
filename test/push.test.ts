@@ -94,7 +94,7 @@ describe('private Web Push', () => {
       let end = plaintext.length - 1; while (plaintext[end] === 0) end--;
       expect(plaintext[end]).toBe(2);
       const notification = JSON.parse(new TextDecoder().decode(plaintext.slice(0, end)));
-      expect(notification).toMatchObject({ title: '인증 메일 도착', body: 'Bluekite에서 확인할 수 있습니다.', url: `/?message=${id}` });
+      expect(notification).toMatchObject({ title: '인증 메일 도착', body: 'Mailroom에서 확인할 수 있습니다.', url: `/?message=${id}` });
       return new Response(null, { status: 201 });
     });
     vi.stubGlobal('fetch', fetcher);

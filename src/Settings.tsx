@@ -170,7 +170,7 @@ function Notifications({ active }: { active: boolean }) {
     catch (error) { await failed(error); }
     finally { finish(); }
   }
-  const unavailable = homeScreen ? '홈 화면에 추가한 Bluekite에서 알림을 켤 수 있습니다.' : !supported ? '이 브라우저에서는 알림을 지원하지 않습니다.' : permission === 'denied' ? '브라우저의 사이트 설정에서 알림을 허용해 주세요.' : status && !status.configured ? '알림 서버가 연결되지 않았습니다.' : '';
+  const unavailable = homeScreen ? '홈 화면에 추가한 Mailroom에서 알림을 켤 수 있습니다.' : !supported ? '이 브라우저에서는 알림을 지원하지 않습니다.' : permission === 'denied' ? '브라우저의 사이트 설정에서 알림을 허용해 주세요.' : status && !status.configured ? '알림 서버가 연결되지 않았습니다.' : '';
   const connected = Boolean(device && permission === 'granted');
   async function revoke(id: string) {
     if (!start()) return;

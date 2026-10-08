@@ -35,7 +35,7 @@ self.addEventListener('push', event => {
     const raw = typeof data.url === 'string' ? data.url : '/';
     let target = '/';
     try { const url = new URL(raw, self.location.origin); if (url.origin === self.location.origin) target = url.pathname + url.search; } catch {}
-    await self.registration.showNotification(typeof data.title === 'string' ? data.title.slice(0, 100) : 'Bluekite', {
+    await self.registration.showNotification(typeof data.title === 'string' ? data.title.slice(0, 100) : 'Mailroom', {
       body: typeof data.body === 'string' ? data.body.slice(0, 240) : '새 메일이 도착했습니다.',
       icon: '/brand/icon-192.png', badge: '/brand/notification-badge.png',
       tag: typeof data.tag === 'string' ? data.tag.slice(0, 80) : 'bluekite-mail',

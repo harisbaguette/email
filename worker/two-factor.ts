@@ -79,7 +79,7 @@ export async function startTwoFactor(env: Env, session: string, password: unknow
     env.DB.prepare('DELETE FROM two_factor_setups WHERE expires_at<?').bind(Date.now()),
     env.DB.prepare('INSERT INTO two_factor_setups (session_hash,secret,expires_at,recovery_hashes) VALUES (?,?,?,?) ON CONFLICT(session_hash) DO UPDATE SET secret=excluded.secret,expires_at=excluded.expires_at,recovery_hashes=excluded.recovery_hashes').bind(session, await seal(env, secret), Date.now() + 600000, JSON.stringify(hashes)),
   ]);
-  return { secret, recoveryCodes: codes, uri: `otpauth://totp/${encodeURIComponent('Bluekite:' + (owner?.value || 'owner'))}?secret=${secret}&issuer=Bluekite&algorithm=SHA1&digits=6&period=30` };
+  return { secret, recoveryCodes: codes, uri: `otpauth://totp/${encodeURIComponent('Mailroom:' + (owner?.value || 'owner'))}?secret=${secret}&issuer=Mailroom&algorithm=SHA1&digits=6&period=30` };
 }
 export async function confirmTwoFactor(env: Env, session: string, code: unknown) {
   const setup = await env.DB.prepare('SELECT secret,recovery_hashes FROM two_factor_setups WHERE session_hash=? AND expires_at>?').bind(session, Date.now()).first<{ secret: string; recovery_hashes: string }>();
