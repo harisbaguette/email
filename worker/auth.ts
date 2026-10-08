@@ -1,8 +1,10 @@
-import bcrypt from 'bcryptjs';
+import { hashPassword, passwordMatches, passwordLength } from '../shared/password';
+import { validateNewPassword, isBreachedPassword, isContextPassword } from '../shared/password-policy';
 import { verifyTwoFactor } from './two-factor';
 import { HttpError, type Env } from './types';
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 
 export async function sha256(value: string | Uint8Array): Promise<string> {
@@ -26,8 +28,8 @@ export async function getSession(request: Request, env: Env): Promise<string | n
     .find(s => s.startsWith(`${name}=`))?.slice(name.length + 1);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const digest = await sha256(token);
-  const row = await env.DB.prepare('SELECT last_seen_at FROM sessions WHERE token_hash = ? AND expires_at > ?')
-    .bind(digest, Date.now()).first<{ last_seen_at: number }>();
+  const row = await env.DB.prepare('SELECT last_seen_at FROM sessions WHERE token_hash = ? AND expires_at > ? AND last_seen_at > ?')
+    .bind(digest, Date.now(), Date.now() - SESSION_IDLE_MS).first<{ last_seen_at: number }>();
   if (row && row.last_seen_at < Date.now() - 300_000) await env.DB.prepare('UPDATE sessions SET last_seen_at=? WHERE token_hash=? AND last_seen_at < ?').bind(Date.now(), digest, Date.now() - 300_000).run();
   return row ? digest : null;
 }
@@ -86,9 +88,8 @@ export async function jsonBody(request: Request, allowEmpty = false): Promise<Re
 }
 
 export function validatePassword(password: unknown): asserts password is string {
-  if (typeof password !== 'string' || password.length < 8 || encoder.encode(password).length > 72) {
-    throw new HttpError(400, '비밀번호는 8자 이상, 영문 기준 72자 이내로 입력해 주세요.');
-  }
+  try { validateNewPassword(password); }
+  catch (error) { throw new HttpError(400, (error as Error).message); }
 }
 
 export async function limitLogin(request: Request, env: Env, scope: 'login' | 'security' = 'login') {
@@ -128,18 +129,25 @@ export async function login(request: Request, env: Env) {
   const revision = await authRevision(env);
   const { username, password, code } = await jsonBody(request);
   if (typeof username !== 'string' || username.length < 1 || username.length > 64) throw new HttpError(400, '아이디를 입력해 주세요.');
-  if (typeof password !== 'string' || encoder.encode(password).length > 72) throw new HttpError(400, '비밀번호를 입력해 주세요.');
+  if (typeof password !== 'string' || passwordLength(password) > 128) throw new HttpError(400, '비밀번호를 입력해 주세요.');
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'password_hash'").first<{ value: string }>();
   if (!row) throw new HttpError(503, '수신함의 첫 비밀번호가 아직 설정되지 않았습니다.');
   const owner = await env.DB.prepare("SELECT value FROM settings WHERE key = 'login_username'").first<{ value: string }>();
-  const passwordMatches = await bcrypt.compare(password, row.value);
-  if (!passwordMatches || username.trim() !== (owner?.value || 'owner')) throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
+  if (row.value.startsWith('$2') && encoder.encode(password).length > 72) throw new HttpError(400, '비밀번호를 확인해 주세요.');
+  const matches = await passwordMatches(password, row.value);
+  if (!matches || username.trim() !== (owner?.value || 'owner')) throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다.');
   await verifyTwoFactor(env, code);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash = ? OR ip_hash = 'account' OR window_start < ?").bind(key, Date.now() - 86_400_000),
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(Date.now()),
   ]);
-  return createSession(env, request, revision);
+  const previous = await getSession(request, env);
+  const token = await createSession(env, request, revision);
+  if (previous) await env.DB.batch([
+    env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash=?').bind(previous),
+    env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(previous),
+  ]);
+  return token;
 }
 
 export async function changePassword(request: Request, env: Env, session: string) {
@@ -147,11 +155,17 @@ export async function changePassword(request: Request, env: Env, session: string
   await limitLogin(request, env, 'security');
   const { currentPassword, newPassword, code } = await jsonBody(request);
   validatePassword(newPassword);
-  if (typeof currentPassword !== 'string' || encoder.encode(currentPassword).length > 72) throw new HttpError(400, '현재 비밀번호를 입력해 주세요.');
+  if (typeof currentPassword !== 'string' || passwordLength(currentPassword) > 128) throw new HttpError(400, '현재 비밀번호를 입력해 주세요.');
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'password_hash'").first<{ value: string }>();
-  if (!row || !(await bcrypt.compare(currentPassword, row.value))) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
+  if (!row || !(await passwordMatches(currentPassword, row.value))) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
   await verifyTwoFactor(env, code);
-  const hash = await bcrypt.hash(newPassword, 12);
+  const owner = await env.DB.prepare("SELECT value FROM settings WHERE key='login_username'").first<{ value: string }>();
+  if (isContextPassword(newPassword, owner?.value || 'owner')) throw new HttpError(400, '서비스 이름이나 아이디로 만든 비밀번호는 쉽게 추측할 수 있습니다. 다른 문구를 입력해 주세요.');
+  let breached: boolean;
+  try { breached = await isBreachedPassword(newPassword); }
+  catch { throw new HttpError(503, '유출 비밀번호 검사를 완료하지 못했습니다. 잠시 뒤 다시 시도해 주세요. 기존 비밀번호는 유지됩니다.'); }
+  if (breached) throw new HttpError(400, '이미 유출된 비밀번호입니다. 다른 비밀번호를 입력해 주세요.');
+  const hash = await hashPassword(newPassword);
   const nextRevision = await atomicAuthChange(env, session, revision, [
     env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'password_hash'").bind(hash),
     env.DB.prepare('DELETE FROM two_factor_setups'),
@@ -174,7 +188,7 @@ export async function revokeSession(env: Env, current: string, id: string) {
   if (id !== 'others' && !/^[a-f0-9]{32}$/.test(id)) throw new HttpError(400, '기기를 확인해 주세요.');
   const where = id === 'others' ? 'token_hash != ?' : 'id=? AND token_hash != ?';
   const values = id === 'others' ? [current] : [id, current];
-  await env.DB.batch([
+  await atomicAuthChange(env, current, await authRevision(env), [
     env.DB.prepare(`DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE ${where})`).bind(...values),
     env.DB.prepare(`DELETE FROM sessions WHERE ${where}`).bind(...values),
   ]);

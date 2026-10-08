@@ -66,8 +66,8 @@ export async function cleanSecurityState(env: Env) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM mail_limits WHERE window_start<?').bind(now - 86_400_000),
     env.DB.prepare('DELETE FROM login_attempts WHERE window_start<?').bind(now - 86_400_000),
-    env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=?)').bind(now),
-    env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(now),
+    env.DB.prepare('DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=? OR last_seen_at<=?)').bind(now, now - 7 * 86_400_000),
+    env.DB.prepare('DELETE FROM sessions WHERE expires_at<=? OR last_seen_at<=?').bind(now, now - 7 * 86_400_000),
     env.DB.prepare('DELETE FROM two_factor_setups WHERE expires_at<=?').bind(now),
   ]);
 }

@@ -122,5 +122,5 @@ export async function processNotifications(env: Env, messageId?: string) {
 }
 
 async function cleanSubscriptions(env: Env) {
-  await env.DB.prepare('DELETE FROM push_subscriptions WHERE NOT EXISTS (SELECT 1 FROM sessions WHERE token_hash=session_hash AND expires_at>?)').bind(Date.now()).run();
+  await env.DB.prepare('DELETE FROM push_subscriptions WHERE NOT EXISTS (SELECT 1 FROM sessions WHERE token_hash=session_hash AND expires_at>? AND last_seen_at>?)').bind(Date.now(), Date.now() - 7 * 86_400_000).run();
 }

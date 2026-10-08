@@ -1,4 +1,5 @@
 import PostalMime from 'postal-mime';
+import { recordEvent } from './operations';
 import { convert } from 'html-to-text';
 import { sha256 } from './auth';
 import type { Env } from './types';
@@ -52,9 +53,9 @@ export async function receiveMail(message: ForwardableEmailMessage, env: Env) {
   if (!Number.isSafeInteger(message.rawSize) || message.rawSize < 1 || message.rawSize > MAX_EMAIL_BYTES) {
     message.setReject('Message exceeds the supported size limit.'); return;
   }
-  if (await storageFull(env)) { message.setReject('Mailbox storage limit reached.'); return; }
+  if (await storageFull(env)) { await recordEvent(env, 'storage_full'); message.setReject('Mailbox storage limit reached.'); return; }
   if (!await reserveDelivery(env, recipient, message.rawSize)) {
-    console.warn(JSON.stringify({ event: 'mail_rejected', reason: 'delivery_limit' }));
+    await recordEvent(env, 'mail_limited');
     message.setReject('Mailbox delivery limit reached. Please contact the recipient before resending.'); return;
   }
   const bytes = await readMail(message.raw as unknown as ReadableStream<Uint8Array>, message.rawSize);

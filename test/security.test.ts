@@ -1,9 +1,9 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env, applyD1Migrations } from 'cloudflare:test';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import bcrypt from 'bcryptjs';
-import { createSession, changePassword, jsonBody, limitLogin, sha256, bumpAuthRevision } from '../worker/auth';
+import { createSession, getSession, changePassword, jsonBody, limitLogin, sha256, bumpAuthRevision } from '../worker/auth';
 import { startTwoFactor, confirmTwoFactor, disableTwoFactor, totp } from '../worker/two-factor';
 import { receiveMail, getRaw, MAX_EMAIL_BYTES } from '../worker/mail';
 import { cleanSecurityState, reserveDelivery, STORAGE_MESSAGES, DAILY_MAIL_BYTES } from '../worker/abuse';
@@ -26,11 +26,29 @@ async function request(path: string, init: RequestInit = {}, customEnv = testEnv
   return worker.fetch(new Request(origin + path, { ...init, headers: { Cookie: cookie, ...init.headers } }), customEnv);
 }
 beforeAll(() => applyD1Migrations(bindings.DB, bindings.TEST_MIGRATIONS));
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(async () => {
   await bindings.DB.batch(['messages', 'addresses', 'sessions', 'login_attempts', 'settings', 'mail_limits', 'two_factor', 'recovery_codes', 'two_factor_setups', 'push_subscriptions'].map(table => bindings.DB.prepare(`DELETE FROM ${table}`)));
   await bindings.DB.prepare('UPDATE mail_storage SET messages=0,bytes=0 WHERE id=1').run();
   await bindings.DB.prepare('INSERT INTO addresses (address,created_at,managed) VALUES (?,0,1)').bind(recipient).run();
   cookie = `__Host-bluekite_session=${await createSession(testEnv)}`;
+});
+
+describe('session lifecycle', () => {
+  it('does not serve content over deprecated TLS even with a valid session', async () => {
+    const req = new Request(origin + '/api/inbox', { headers: { Cookie: cookie } });
+    Object.defineProperty(req, 'cf', { value: { tlsVersion: 'TLSv1.1' } });
+    expect((await worker.fetch(req, testEnv)).status).toBe(426);
+  });
+  it('rejects a session unused for seven days even before scheduled cleanup', async () => {
+    await bindings.DB.prepare('UPDATE sessions SET last_seen_at=?').bind(Date.now() - 7 * 86_400_000 - 1).run();
+    expect(await getSession(new Request(origin, { headers: { Cookie: cookie } }), testEnv)).toBeNull();
+  });
+  it('atomically keeps at most ten sessions and revokes the oldest', async () => {
+    await Promise.all(Array.from({ length: 12 }, () => createSession(testEnv)));
+    expect((await bindings.DB.prepare('SELECT COUNT(*) AS n FROM sessions').first<any>()).n).toBe(10);
+    expect(await getSession(new Request(origin, { headers: { Cookie: cookie } }), testEnv)).toBeNull();
+  });
 });
 
 describe('mail bomb protection', () => {
@@ -124,7 +142,28 @@ describe('mail bomb protection', () => {
 });
 
 describe('HTTP and account abuse boundaries', () => {
+  it('preserves a message restored while a permanent deletion request is in flight', async () => {
+    const id = (await receiveMail(incoming(), testEnv))!;
+    await bindings.DB.prepare('UPDATE messages SET deleted_at=1 WHERE id=?').bind(id).run();
+    const raceEnv = { ...testEnv, DB: {
+      prepare(query: string) {
+        const statement = bindings.DB.prepare(query);
+        if (!query.startsWith('DELETE FROM messages WHERE id')) return statement;
+        return { bind(...values: unknown[]) {
+          return { async run() {
+            await bindings.DB.prepare('UPDATE messages SET deleted_at=NULL WHERE id=?').bind(id).run();
+            return statement.bind(...values).run();
+          } };
+        } } as D1PreparedStatement;
+      },
+    } as D1Database };
+    const response = await request(`/api/messages/${id}`, { method: 'DELETE', headers: { Origin: origin, 'X-Bluekite-Request': '1' } }, raceEnv);
+    expect(response.status).toBe(409);
+    expect(await bindings.DB.prepare('SELECT deleted_at FROM messages WHERE id=?').bind(id).first()).toEqual({ deleted_at: null });
+    expect(await getRaw(testEnv, id)).not.toBeNull();
+  });
   it.each(['password', 'mfa-setup', 'mfa-disable'])('rolls back %s if the device is revoked during reauthentication', async action => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('0'.repeat(35) + ':0')));
     const password = 'test-security-password';
     const passwordHash = await bcrypt.hash(password,4);
     await bindings.DB.prepare("INSERT INTO settings VALUES ('password_hash',?)").bind(passwordHash).run();

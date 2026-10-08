@@ -1,5 +1,6 @@
 import PostalMime from 'postal-mime';
-import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor } from './two-factor';
+import { recordEvent, operationStatus, monitorAuthorized, finishScheduled } from './operations';
+import { twoFactorStatus, startTwoFactor, confirmTwoFactor, disableTwoFactor, verifyCurrentPassword } from './two-factor';
 import { assertSameOrigin, changePassword, getSession, jsonBody, login, sessionCookie, listSessions, revokeSession, limitLogin, createSession } from './auth';
 import { actionUpdate, bulkMessages, updateAddress, ruleSender, addressQuery } from './management';
 import { getInbox } from './inbox';
@@ -39,6 +40,10 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === '/api/health' && method === 'GET') {
     return json({ ok: true });
   }
+  if (path === '/api/monitor' && method === 'GET') {
+    if (!monitorAuthorized(request, env)) throw new HttpError(401, '인증이 필요합니다.');
+    return json(await operationStatus(env));
+  }
   if (path === '/api/login' && method === 'POST') {
     const token = await login(request, env);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
@@ -46,6 +51,9 @@ async function api(request: Request, env: Env): Promise<Response> {
   const session = await getSession(request, env);
   if (path === '/api/session' && method === 'GET') return json({ authenticated: Boolean(session), domain: env.MAIL_DOMAIN });
   if (!session) throw new HttpError(401, '다시 로그인해 주세요.');
+  if (path === '/api/security-events' && method === 'GET') {
+    return json({ events: (await env.DB.prepare('SELECT kind,window_start AS at FROM security_events ORDER BY window_start DESC LIMIT 30').all()).results });
+  }
   if (path === '/api/logout' && method === 'POST') {
     const body = await jsonBody(request, true);
     const pushId = typeof body.pushId === 'string' && /^[a-f0-9]{64}$/.test(body.pushId) ? body.pushId : '';
@@ -75,7 +83,11 @@ async function api(request: Request, env: Env): Promise<Response> {
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, token) });
   }
   if (path === '/api/sessions' && method === 'GET') return json({ sessions: await listSessions(env, session) });
-  if (path.startsWith('/api/sessions/') && method === 'DELETE') { await revokeSession(env, session, path.slice('/api/sessions/'.length)); return json({ ok: true }); }
+  if (path.startsWith('/api/sessions/') && method === 'DELETE') {
+    await limitLogin(request, env, 'security');
+    await verifyCurrentPassword(env, (await jsonBody(request)).password);
+    await revokeSession(env, session, path.slice('/api/sessions/'.length)); return json({ ok: true });
+  }
   if (path === '/api/messages/bulk' && method === 'POST') return json(await bulkMessages(env, await jsonBody(request)));
   if (path === '/api/addresses' && method === 'GET') return json({ addresses: (await env.DB.prepare(addressQuery).all()).results });
   if (path === '/api/addresses' && method === 'PATCH') { await updateAddress(env, await jsonBody(request)); return json({ ok: true }); }
@@ -161,7 +173,8 @@ async function api(request: Request, env: Env): Promise<Response> {
     }
     if (!action && method === 'DELETE') {
       if (row.deleted_at === null) throw new HttpError(409, '먼저 휴지통으로 이동해 주세요.');
-      await env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(id).run();
+      const result = await env.DB.prepare('DELETE FROM messages WHERE id = ? AND deleted_at IS NOT NULL').bind(id).run();
+      if (!result.meta.changes) throw new HttpError(409, '메일 상태가 바뀌었습니다. 목록을 새로고침해 주세요.');
       return json({ ok: true });
     }
   }
@@ -171,6 +184,10 @@ async function api(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // Do not serve private content over deprecated TLS even if a zone setting regresses.
+    if (request.cf?.tlsVersion && ['TLSv1', 'TLSv1.0', 'TLSv1.1'].includes(String(request.cf.tlsVersion))) {
+      return secured(json({ error: 'TLS 1.2 이상을 지원하는 브라우저로 연결해 주세요.' }, 426));
+    }
     if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
       return Response.redirect(env.PUBLIC_ORIGIN + url.pathname + url.search, 308);
     }
@@ -178,21 +195,42 @@ export default {
       return secured(json({ error: '허용되지 않은 주소입니다.' }, 421));
     }
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
-    try { return secured(await api(request, env)); }
+    const requestId = crypto.randomUUID();
+    try {
+      const response = await api(request, env);
+      if (response.ok) {
+        if (url.pathname === '/api/login' && request.method === 'POST') await recordEvent(env, 'login_succeeded', requestId);
+        if (url.pathname === '/api/password' && request.method === 'POST') await recordEvent(env, 'password_changed', requestId);
+        if (/^\/api\/two-factor\/(confirm|disable)$/.test(url.pathname) && request.method === 'POST') await recordEvent(env, 'mfa_changed', requestId);
+        if (url.pathname.startsWith('/api/sessions/') && request.method === 'DELETE') await recordEvent(env, 'session_revoked', requestId);
+      }
+      response.headers.set('X-Request-ID', requestId);
+      return secured(response);
+    }
     catch (error) {
-      if (error instanceof HttpError) return secured(json({ error: error.message }, error.status,
-        error.status === 429 ? { 'Retry-After': new URL(request.url).pathname.startsWith('/api/push/') ? '60' : String(error.retryAfter) } : undefined));
-      console.error(JSON.stringify({ event: 'api_error', error: error instanceof Error ? error.name : 'Error' }));
-      return secured(json({ error: '잠시 연결이 원활하지 않습니다. 다시 시도해 주세요.' }, 500));
+      if (error instanceof HttpError) {
+        if ([401, 403, 429].includes(error.status)) console.warn(JSON.stringify({ timestamp: new Date().toISOString(), level: 'warn', event: 'request_denied', status: error.status, requestId }));
+        // Rate-limited probes never add database work to the edge limiter path.
+        if (url.pathname === '/api/login' && [400, 401].includes(error.status)) await recordEvent(env, 'login_failed', requestId);
+        return secured(json({ error: error.message }, error.status, { 'X-Request-ID': requestId,
+          ...(error.status === 429 ? { 'Retry-After': url.pathname.startsWith('/api/push/') ? '60' : String(error.retryAfter) } : {}) }));
+      }
+      await recordEvent(env, 'api_error', requestId);
+      return secured(json({ error: '잠시 연결이 원활하지 않습니다. 다시 시도해 주세요.' }, 500, { 'X-Request-ID': requestId }));
     }
   },
   async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
-    const id = await receiveMail(message, env);
+    let id: string | undefined;
+    try { id = await receiveMail(message, env); }
+    catch (error) { await recordEvent(env, 'mail_error'); throw error; }
     // SMTP delivery succeeds once safely stored. Classification failures never lose mail.
     if (id) ctx.waitUntil((async () => {
       try { await sortMessage(env, id); } catch { console.warn(JSON.stringify({ event: 'mail_sorting_deferred', reason: 'storage_unavailable' })); }
       await processNotifications(env, id);
     })().catch(() => console.warn(JSON.stringify({ event: 'notification_deferred' }))));
   },
-  async scheduled(_event: ScheduledController, env: Env) { await cleanSecurityState(env); await sortPending(env); await processNotifications(env); },
+  async scheduled(_event: ScheduledController, env: Env) {
+    try { await cleanSecurityState(env); await sortPending(env); await processNotifications(env); await finishScheduled(env); }
+    catch (error) { await recordEvent(env, 'cron_error'); throw error; }
+  },
 } satisfies ExportedHandler<Env>;

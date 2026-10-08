@@ -1,5 +1,5 @@
 import { normalizeAuthCode } from '../shared/auth-code';
-import bcrypt from 'bcryptjs';
+import { passwordMatches } from '../shared/password';
 import { sha256, authRevision, atomicAuthChange } from './auth';
 import { HttpError, type Env } from './types';
 
@@ -51,7 +51,7 @@ export async function verifyTwoFactor(env: Env, code: unknown) {
   const row = await env.DB.prepare('SELECT secret,last_counter FROM two_factor WHERE id=1').first<{ secret: string; last_counter: number }>();
   if (!row) return;
   if (!code) throw new HttpError(428, '인증 앱 코드 또는 복구 코드를 입력해 주세요.');
-  if (typeof code === 'string' && /^(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{4}$/.test(code)) {
+  if (typeof code === 'string' && /^(?:(?:[a-fA-F0-9]{4}-){3}|(?:[a-fA-F0-9]{4}-){7})[a-fA-F0-9]{4}$/.test(code)) {
     const result = await env.DB.prepare('DELETE FROM recovery_codes WHERE code_hash=? RETURNING code_hash').bind(await sha256(code.toLowerCase())).first();
     if (result) return;
   } else {
@@ -65,14 +65,14 @@ export async function verifyTwoFactor(env: Env, code: unknown) {
 }
 export async function verifyCurrentPassword(env: Env, password: unknown) {
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key='password_hash'").first<{ value: string }>();
-  if (typeof password !== 'string' || new TextEncoder().encode(password).length > 72 || !row || !await bcrypt.compare(password, row.value)) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
+  if (typeof password !== 'string' || !row || !await passwordMatches(password, row.value)) throw new HttpError(400, '현재 비밀번호가 맞지 않습니다.');
 }
 export async function startTwoFactor(env: Env, session: string, password: unknown) {
   const revision = await authRevision(env);
   await verifyCurrentPassword(env, password);
   if ((await twoFactorStatus(env)).enabled) throw new HttpError(409, '이미 2단계 인증이 켜져 있습니다.');
   const secret = base32(crypto.getRandomValues(new Uint8Array(20)));
-  const codes = Array.from({ length: 8 }, () => [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('').match(/.{4}/g)!.join('-'));
+  const codes = Array.from({ length: 8 }, () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('').match(/.{4}/g)!.join('-'));
   const hashes = await Promise.all(codes.map(sha256));
 
   const owner = await env.DB.prepare("SELECT value FROM settings WHERE key='login_username'").first<{ value: string }>();

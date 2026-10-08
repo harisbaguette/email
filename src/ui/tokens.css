@@ -1,0 +1,49 @@
+@layer reset, base, components, layout, responsive;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --text: #24314a;
+    --muted: #5c6b80;
+    --line: #dfe6ef;
+    --border-control: #8392a8;
+    --surface: #f1f4f8;
+    --paper: #fff;
+    --hover: #e9eef6;
+    --blue: #315dde;
+    --accent-soft: #edf2ff;
+    --accent-line: #cad8f5;
+    --primary: #2c405f;
+    --primary-hover: #3b5277;
+    --danger: #a72f3c;
+    --danger-hover: #8f2330;
+    --danger-soft: #fff0f1;
+    --success: #286346;
+    --success-soft: #edf5f0;
+    --warning: #855d12;
+    --warning-soft: #fff7e6;
+    --purple: #6a517f;
+    --purple-soft: #f3eff8;
+    --backdrop: #24314a66;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-panel: 20px;
+    --radius-pill: 999px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --control-height: 44px;
+    --font-small: 12px;
+    --font-label: 14px;
+    --font-body: 15px;
+    --font-input: 16px;
+    --shadow-panel: 0 4px 24px #24314a08;
+    --shadow-floating: 0 12px 40px #24314a26;
+    --duration: 150ms;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}

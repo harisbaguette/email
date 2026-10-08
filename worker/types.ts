@@ -1,4 +1,5 @@
 export interface Env {
+  MONITOR_TOKEN?: string;
   MFA_ENCRYPTION_KEY?: string;
   DB: D1Database;
   ASSETS: Fetcher;

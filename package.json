@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "dev": "npm run build && wrangler dev --port 8787",
@@ -13,12 +13,16 @@
     "build": "tsc --noEmit && vite build && node scripts/build-pwa.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "npm run db:local && npm run password:local && playwright test",
+    "test:e2e": "node scripts/prepare-test-env.mjs && npm run db:local && npm run password:local && playwright test",
     "db:local": "wrangler d1 migrations apply bluekite-mail --local",
     "db:remote": "wrangler d1 migrations apply bluekite-mail --remote",
     "password:local": "node scripts/reset-password.mjs --local",
     "password:reset": "node scripts/reset-password.mjs --remote",
-    "deploy": "npm run build && npm run db:remote && wrangler deploy"
+    "deploy": "npm run build && npm run db:remote && wrangler deploy",
+    "check:ui": "node scripts/check-ui.mjs",
+    "check": "npm test && npm run build",
+    "format:ui": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "prebuild": "npm run check:ui"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",
@@ -40,6 +44,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@babel/parser": "^8.0.7",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20261007.1",
     "@playwright/test": "^1.63.0",
@@ -49,6 +54,8 @@
     "@types/react-dom": "^19.3.0",
     "@types/sanitize-html": "^2.16.2",
     "@vitejs/plugin-react": "^6.1.2",
+    "postcss": "^8.5.29",
+    "prettier": "^3.9.9",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",

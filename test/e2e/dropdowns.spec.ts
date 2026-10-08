@@ -29,7 +29,8 @@ test('folder menu supports keyboard selection, cancellation, focus return and al
   }
   await trigger.click();
   await page.getByRole('listbox').evaluate(async node => { await Promise.all(node.getAnimations().map(animation => animation.finished)); });
-  await page.mouse.click(1000, 90);
+  const bounds = (await page.getByRole('listbox').boundingBox())!;
+  await page.mouse.click(bounds.x - 12, bounds.y + 12);
   await expect(page.getByRole('listbox')).toHaveCount(0); await expect(trigger).toHaveText('휴지통');
 });
 

@@ -1,0 +1,5 @@
+Contact: https://github.com/harisbaguette/email/security/advisories/new
+Expires: 2027-09-01T00:00:00Z
+Canonical: https://email.bluekite.co.kr/.well-known/security.txt
+Preferred-Languages: ko, en
+Policy: https://github.com/harisbaguette/email/blob/main/SECURITY.md

@@ -46,7 +46,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await bindings.DB.batch(['DELETE FROM push_deliveries', 'DELETE FROM push_subscriptions', 'DELETE FROM raw_chunks', 'DELETE FROM messages', 'DELETE FROM addresses', 'DELETE FROM sessions', 'DELETE FROM mail_limits'].map(sql => bindings.DB.prepare(sql)));
   await bindings.DB.prepare("INSERT INTO addresses (address,created_at,managed) VALUES ('hi@bluekite.co.kr',0,1)").run();
-  await bindings.DB.prepare('INSERT INTO sessions (token_hash, expires_at, created_at) VALUES (?, ?, ?)').bind(await sha256(token), Date.now() + 3600000, Date.now()).run();
+  await bindings.DB.prepare('INSERT INTO sessions (token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?)').bind(await sha256(token), Date.now() + 3600000, Date.now(), Date.now()).run();
 });
 afterEach(() => vi.unstubAllGlobals());
 

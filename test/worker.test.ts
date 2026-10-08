@@ -231,6 +231,7 @@ describe('private inbox', () => {
   });
 
   it('changes the password and revokes every previous session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('0'.repeat(35) + ':0')));
     expect((await request('/api/password', 'POST', { currentPassword: 'wrong', newPassword: 'new-local-test-password' })).status).toBe(400);
     const response = await request('/api/password', 'POST', { currentPassword: password, newPassword: 'new-local-test-password' });
     expect(response.status).toBe(200);
@@ -239,6 +240,19 @@ describe('private inbox', () => {
     expect((await request('/api/inbox')).status).toBe(200);
     expect((await request('/api/login', 'POST', { password }, false)).status).toBe(401);
     expect((await request('/api/login', 'POST', { password: 'new-local-test-password' }, false)).status).toBe(200);
+  });
+
+  it('keeps the current credential and session when a new password is breached or the check fails', async () => {
+    const candidate = 'unsafe-new-password';
+    const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(candidate));
+    const suffix = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase().slice(5);
+    for (const [upstream, expected] of [[new Response(`${suffix}:200`), 400], [new Response('', { status: 503 }), 503]] as const) {
+      vi.stubGlobal('fetch', vi.fn(async () => upstream));
+      expect((await request('/api/password', 'POST', { currentPassword: password, newPassword: candidate })).status).toBe(expected);
+      expect((await request('/api/inbox')).status).toBe(200);
+      const row = await bindings.DB.prepare("SELECT value FROM settings WHERE key='password_hash'").first<{ value: string }>();
+      expect(await bcrypt.compare(password, row!.value)).toBe(true);
+    }
   });
 
   it('normalizes addresses without creating provider accounts and rejects invalid addresses', async () => {

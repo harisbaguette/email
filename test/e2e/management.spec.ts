@@ -91,6 +91,7 @@ test('another login device can be revoked while the current device remains signe
     const response = await other.request.post('/api/login', { headers: { Origin: 'http://127.0.0.1:8787', 'X-Bluekite-Request': '1' }, data: credentials }); expect(response.ok()).toBe(true);
     await page.goto('/?settings=account');
     await page.getByRole('button', { name: '다른 기기 모두 로그아웃', exact: true }).click();
+    await page.getByRole('dialog').getByLabel('현재 비밀번호', { exact: true }).fill(credentials.password);
     await page.getByRole('dialog').getByRole('button', { name: '로그아웃', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect((await other.request.get('/api/inbox')).status()).toBe(401);

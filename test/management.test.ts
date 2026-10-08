@@ -131,7 +131,8 @@ describe('mail management and security boundaries', () => {
     const sessions=(await (await request('/api/sessions')).json() as any).sessions;
     expect(JSON.stringify(sessions)).not.toContain(hash); expect(sessions.filter((s:any)=>s.current)).toHaveLength(1);
     const target=sessions.find((s:any)=>!s.current);
-    await request(`/api/sessions/${target.id}`,'DELETE');
+    expect((await request(`/api/sessions/${target.id}`,'DELETE',{password:'wrong'})).status).toBe(400);
+    await request(`/api/sessions/${target.id}`,'DELETE',{password});
     expect((await request('/api/inbox','GET',undefined,origin,`__Host-bluekite_session=${second}`)).status).toBe(401);
     expect(await bindings.DB.prepare('SELECT 1 FROM push_subscriptions').first()).toBeNull();
     expect((await request('/api/inbox')).status).toBe(200);
@@ -164,6 +165,7 @@ describe('two factor authentication', () => {
     expect((await request('/api/two-factor/setup','POST',{ password:'wrong' })).status).toBe(400);
     expect((await (await request('/api/two-factor')).json() as any).enabled).toBe(false);
     const setup=await (await request('/api/two-factor/setup','POST',{ password })).json() as any;
+    expect(setup.recoveryCodes.every((code: string) => /^(?:[a-f0-9]{4}-){7}[a-f0-9]{4}$/.test(code))).toBe(true);
     expect((await (await request('/api/two-factor')).json() as any).enabled).toBe(false);
     await bindings.DB.prepare('UPDATE two_factor_setups SET expires_at=0').run();
     expect((await request('/api/two-factor/confirm','POST',{ code:await totp(setup.secret,Math.floor(Date.now()/30000)),recoverySaved:true })).status).toBe(410);
@@ -174,6 +176,7 @@ describe('two factor authentication', () => {
     expect((await request('/api/login','POST',{ username:'owner',password })).status).toBe(428);
     expect((await request('/api/login','POST',{ username:'owner',password,code:setup.code })).status).toBe(400);
     const login=await request('/api/login','POST',{ username:'owner',password,code:' '+setup.recoveryCodes[0].replaceAll('-', ' – ')+' ' }); expect(login.status).toBe(200);
+    cookie = login.headers.get('Set-Cookie')!.split(';')[0];
     expect((await request('/api/login','POST',{ username:'owner',password,code:setup.recoveryCodes[0] })).status).toBe(400);
     expect((await (await request('/api/two-factor')).json() as any).recoveryRemaining).toBe(7);
     expect((await request('/api/password','POST',{ currentPassword:password,newPassword:'new-password-test' })).status).toBe(428);

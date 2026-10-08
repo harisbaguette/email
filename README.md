@@ -61,7 +61,7 @@ npm run password:reset -- --disable-two-factor
 
 ## 로컬 실행
 
-Node.js 22 이상이 필요합니다.
+Node.js 22.18 이상이 필요합니다.
 
 ```sh
 npm ci
@@ -77,7 +77,11 @@ npm test
 npm run test:e2e
 ```
 
-브라우저가 없는 환경에서는 먼저 `npx playwright install chromium`을 실행합니다. 브라우저 검사는 로컬 로그인 비밀번호를 재설정합니다. 검사 중 만든 메일과 주소는 종료 시 삭제합니다.
+브라우저가 없는 환경에서는 먼저 `npx playwright install chromium firefox webkit`을 실행합니다. 브라우저 검사는 빠진 로컬 인증·알림 시험 키를 `.dev.vars`에 만들고 로컬 로그인 비밀번호를 재설정합니다. 검사 중 만든 메일과 주소는 종료 시 삭제합니다.
+
+## UI 수정
+
+공통 컴포넌트의 선택과 사용법은 [디자인 시스템](DESIGN_SYSTEM.md)에 있습니다. `npm run check`로 UI 규칙·서버·빌드를 검사하고 `npm run test:e2e`로 화면을 확인합니다.
 
 ## 배포
 

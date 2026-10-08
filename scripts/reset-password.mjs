@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../shared/password.ts';
+import { validateNewPassword, isBreachedPassword, isContextPassword } from '../shared/password-policy.ts';
 
 const mode = process.argv.includes('--remote') ? '--remote' : process.argv.includes('--local') ? '--local' : null;
 if (!mode) throw new Error('Use --local or --remote.');
@@ -10,9 +11,12 @@ await mkdir('.local', { recursive: true, mode: 0o700 });
 const inputIndex = process.argv.indexOf('--credentials-file');
 const requested = inputIndex < 0 ? null : JSON.parse(await readFile(process.argv[inputIndex + 1], 'utf8'));
 if (requested && (typeof requested.username !== 'string' || !/^[a-zA-Z0-9_.@-]{3,64}$/.test(requested.username)
-  || typeof requested.password !== 'string' || requested.password.length < 8 || Buffer.byteLength(requested.password) > 72)) throw new Error('Invalid credentials file.');
+  || typeof requested.password !== 'string')) throw new Error('Invalid credentials file.');
 const password = requested?.password || randomBytes(24).toString('base64url');
-const hash = await bcrypt.hash(password, 12);
+validateNewPassword(password);
+if (requested && isContextPassword(password, requested.username)) throw new Error('서비스 이름이나 아이디로 만든 비밀번호는 쓸 수 없습니다.');
+if (requested && await isBreachedPassword(password)) throw new Error('이미 유출된 비밀번호입니다. 다른 비밀번호를 선택해 주세요.');
+const hash = await hashPassword(password);
 const sqlFile = resolve(`.local/password-${mode.slice(2)}.sql`);
 const usernameSQL = requested
   ? `INSERT INTO settings (key, value) VALUES ('login_username', '${requested.username}') ON CONFLICT(key) DO UPDATE SET value=excluded.value;`
