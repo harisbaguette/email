@@ -132,7 +132,7 @@
   .managed-copy { min-height: 60px; }
   .managed-copy .copy-affordance { width: 28px; height: 28px; justify-content: center; border-radius: 9px; transition: background .18s, color .18s; }
   .managed-copy:hover .copy-affordance, .is-copied .copy-affordance { color: #315dde; background: #eaf0fc; }
-  .address-group > summary span { padding: 2px 7px; background: #ecf1f8; border-radius: 999px; }
+  .address-group > summary span { padding: 2px 7px; color: #53637c; background: #ecf1f8; border-radius: 999px; }
   .notification-state { background: #f3f6fb; border-color: #e1e8f2; border-radius: 16px; }
   .notification-state.enabled { background: #f0f5ff; border-color: #d6e2fb; }
   .notification-symbol { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; border: 1px solid #fff; background: #ffffffb3; box-shadow: var(--control-shadow); }
